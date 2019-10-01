@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as fnn
 
 import numpy as np
 
@@ -135,6 +135,368 @@ class CVAEModel(nn.Module):
                                     num_layer=self.num_layer)
         self.dec_cell_proj = nn.Linear(self.dec_cell_size, self.vocab_size)
 
+    def get_encoder_state(self, input_contexts, topics, floors, is_train, context_lens,
+                                 max_dialog_len, max_seq_len):
+
+        input_contexts = input_contexts.view(-1, max_seq_len)
+
+        relation_embedded = self.topic_embedding(topics)
+        # if self.config['use_hcf']:
+        #    da_embedded = self.da_embedding(out_da)
+
+        input_embedded = self.word_embedding(input_contexts)
+
+        # only use bi-rnn
+        if self.sent_type == 'bi-rnn':
+            input_embedding, sent_size = get_bi_rnn_encode(input_embedded, self.bi_sent_cell,
+                                                           self.max_utt_len)
+        else:
+            raise ValueError("unk sent_type. select one in [bow, rnn, bi-rnn]")
+
+        # reshape input into dialogs
+        input_embedding = input_embedding.view(-1, max_dialog_len, sent_size)
+
+        if self.keep_prob < 1.0:
+            input_embedding = fnn.dropout(input_embedding, 1 - self.keep_prob, is_train)
+
+        # floors are already converted as one-hot
+        floor_one_hot = floors.new_zeros((floors.numel(), 2), dtype=torch.float)
+        floor_one_hot.data.scatter_(1, floors.view(-1, 1), 1)
+        floor_one_hot = floor_one_hot.view(-1, max_dialog_len, 2)
+
+        joint_embedding = torch.cat([input_embedding, floor_one_hot], 2)
+
+        _, enc_last_state = dynamic_rnn(self.enc_cell, joint_embedding,
+                                        sequence_length=context_lens,
+                                        max_len=self.max_utt_len)
+        if self.num_layer > 1:
+            enc_last_state = torch.cat([_ for _ in torch.unbind(enc_last_state)], 1)
+        else:
+            enc_last_state = enc_last_state.squeeze(0)
+
+        return enc_last_state
+
+    def _sample_from_recog_network(self, local_batch_size, cond_embedding, num_samples,
+                                   out_das, output_embedding, is_train_multiple):
+        if self.use_hcf:
+            attribute_embedding = self.da_embedding(out_das)
+            attribute_fc1 = self.attribute_fc1(attribute_embedding)
+
+            ctrl_attribute_embeddings = {
+                da: self.da_embedding(torch.ones(local_batch_size, dtype=torch.long, device=self.device) * idx)
+                for idx, da in enumerate(self.da_vocab)}
+            ctrl_attribute_fc1 = {k: self.attribute_fc1(v) for (k, v) in ctrl_attribute_embeddings.items()}
+
+            recog_input = torch.cat([cond_embedding, output_embedding, attribute_fc1], 1)
+            if is_train_multiple:
+                ctrl_recog_inputs = {k: torch.cat([cond_embedding, output_embedding, v], 1) for (k, v) in
+                                     ctrl_attribute_fc1.items()}
+        else:
+            recog_input = torch.cat([cond_embedding, output_embedding], 1)
+            if is_train_multiple:
+                ctrl_recog_inputs = {da: torch.cat([cond_embedding, output_embedding], 1)
+                                     for idx, da in enumerate(self.da_vocab)}
+
+        recog_mulogvar = self.recog_mulogvar_net(recog_input)
+        recog_mu, recog_logvar = torch.chunk(recog_mulogvar, 2, 1)
+
+        ctrl_latent_samples = {}
+        ctrl_recog_mus = {}
+        ctrl_recog_logvars = {}
+
+        if is_train_multiple:
+            latent_samples = [sample_gaussian(recog_mu, recog_logvar) for _ in range(num_samples)]
+            ctrl_recog_mulogvars = {k: self.recog_mulogvar_net(v) for (k, v) in ctrl_recog_inputs.items()}
+            for k in ctrl_recog_mulogvars.keys():
+                ctrl_recog_mus[k], ctrl_recog_logvars[k] = torch.chunk(ctrl_recog_mulogvars[k], 2, 1)
+
+            ctrl_latent_samples = {k: sample_gaussian(ctrl_recog_mus[k], ctrl_recog_logvars[k]) for
+                                   k in ctrl_recog_mulogvars.keys()}
+        else:
+            latent_samples = [sample_gaussian(recog_mu, recog_logvar)]
+
+        return latent_samples, recog_mu, recog_logvar, recog_mulogvar, \
+               ctrl_latent_samples, ctrl_recog_mus, ctrl_recog_logvars, ctrl_recog_mulogvars, \
+               attribute_embedding, ctrl_attribute_embeddings
+
+    def _sample_from_prior_network(self, cond_embedding, num_samples):
+        prior_mulogvar = self.prior_mulogvar_net(cond_embedding)
+        prior_mu, prior_logvar = torch.chunk(prior_mulogvar, 2, 1)
+
+        latent_samples = [sample_gaussian(prior_mu, prior_logvar) for _ in range(num_samples)]
+        return latent_samples, prior_mu, prior_logvar, prior_mulogvar
+
+    def _to_device_context(self, feed_dict):
+        context_lens = feed_dict['context_lens'].to(self.device).squeeze()
+        input_contexts = feed_dict['vec_context'].to(self.device)
+        floors = feed_dict['vec_floors'].to(self.device)
+
+        topics = feed_dict['topics'].to(self.device).squeeze()
+        my_profile = feed_dict['my_profile'].to(self.device)
+        ot_profile = feed_dict['ot_profile'].to(self.device)
+
+        return context_lens, input_contexts, floors, topics, my_profile, ot_profile
+
+    def _to_device_output(self, feed_dict):
+        out_tok = feed_dict['vec_outs'].to(self.device)
+        out_das = feed_dict['out_das'].to(self.device).squeeze()
+        output_lens = feed_dict['out_lens'].to(self.device).squeeze()
+
+        return out_tok, out_das, output_lens
+
+    def _get_dec_input_train(self, local_batch_size, cond_embedding, is_train_multiple, latent_samples,
+                             ctrl_latent_samples, attribute_embedding, ctrl_attribute_embeddings):
+        gen_inputs = [torch.cat([cond_embedding, latent_sample], 1) for
+                      latent_sample in latent_samples]
+
+        bow_logit = self.bow_project(gen_inputs[0])
+
+        ctrl_dec_inputs = {}
+        ctrl_dec_init_states = {}
+
+        if self.use_hcf:
+            da_logits = [self.da_project(gen_input) for gen_input in gen_inputs]
+            da_probs = [fnn.softmax(da_logit, dim=1) for da_logit in da_logits]
+
+            selected_attr_embedding = attribute_embedding
+            dec_inputs = [torch.cat((gen_input, selected_attr_embedding), 1) for gen_input in
+                          gen_inputs]
+
+            if is_train_multiple:
+                ctrl_gen_inputs = {k: torch.cat([cond_embedding, v], 1) for (k, v) in
+                                   ctrl_latent_samples.items()}
+                ctrl_dec_inputs = {k: torch.cat((ctrl_gen_inputs[k], ctrl_attribute_embeddings[k]), 1) for k in
+                                       ctrl_gen_inputs.keys()}
+
+
+        else:
+            da_logits = [gen_input.new_zeros(local_batch_size, self.da_size) for gen_input in gen_inputs]
+            dec_inputs = [gen_input for gen_input in gen_inputs]
+
+        # decoder
+
+        if self.num_layer > 1:
+            dec_init_states = [[self.dec_init_state_net[i](dec_input) for i in range(self.num_layer)] for dec_input in
+                               dec_inputs]
+            dec_init_states = [torch.stack(dec_init_state) for dec_init_state in dec_init_states]
+            if is_train_multiple:
+                for k, v in ctrl_dec_inputs.items():
+                    ctrl_dec_init_states[k] = [self.dec_init_state_net[i](v) for i in range(self.num_layer)]
+        else:
+            dec_init_states = [self.dec_init_state_net(dec_input).unsqueeze(0) for dec_input in dec_inputs]
+            if is_train_multiple:
+                ctrl_dec_init_states = {k: self.dec_init_state_net(v).unsqueeze(0) for (k, v) in
+                                        ctrl_dec_inputs.items()}
+
+        return da_logits, bow_logit, dec_inputs, dec_init_states, ctrl_dec_inputs, ctrl_dec_init_states
+
+    def _get_dec_input_test(self, local_batch_size, cond_embedding, latent_samples):
+        gen_inputs = [torch.cat([cond_embedding, latent_sample], 1) for
+                      latent_sample in latent_samples]
+        bow_logit = self.bow_project(gen_inputs[0])
+
+        if self.use_hcf:
+            da_logits = [self.da_project(gen_input) for gen_input in gen_inputs]
+            da_probs = [fnn.softmax(da_logit, dim=1) for da_logit in da_logits]
+            pred_attribute_embeddings = [torch.matmul(da_prob, self.da_embedding.weight) for da_prob
+                                         in da_probs]
+            selected_attr_embedding = pred_attribute_embeddings
+            dec_inputs = [torch.cat((gen_input, selected_attr_embedding[i]), 1) for i, gen_input in
+                          enumerate(gen_inputs)]
+
+        else:
+            da_logits = [gen_input.new_zeros(local_batch_size, self.da_size) for gen_input in
+                         gen_inputs]
+            dec_inputs = [gen_input for gen_input in gen_inputs]
+
+        # decoder
+
+        if self.num_layer > 1:
+            dec_init_states = [
+                [self.dec_init_state_net[i](dec_input) for i in range(self.num_layer)] for dec_input
+                in
+                dec_inputs]
+            dec_init_states = [torch.stack(dec_init_state) for dec_init_state in dec_init_states]
+        else:
+            dec_init_states = [self.dec_init_state_net(dec_input).unsqueeze(0) for dec_input in
+                               dec_inputs]
+
+        return da_logits, bow_logit, dec_inputs, dec_init_states, pred_attribute_embeddings
+
+    def feed_inference(self, feed_dict):
+        is_test_multi_da = feed_dict.get("is_test_multi_da", True)
+        num_samples = feed_dict["num_samples"]
+
+        context_lens, input_contexts, floors, \
+        topics, my_profile, ot_profile = self._to_device_context(feed_dict)
+
+        relation_embedded = self.topic_embedding(topics)
+        local_batch_size = input_contexts.size(0)
+        max_dialog_len = input_contexts.size(1)
+        max_seq_len = input_contexts.size(-1)
+
+        enc_last_state = self.get_encoder_state(input_contexts, topics, floors,
+                                            False, context_lens, max_dialog_len, max_seq_len)
+
+        cond_list = [relation_embedded, my_profile, ot_profile, enc_last_state]
+        cond_embedding = torch.cat(cond_list, 1)
+
+        prior_sample_result = self._sample_from_prior_network(cond_embedding, num_samples)
+        _, prior_mu, prior_logvar, prior_mulogvar = prior_sample_result
+
+        latent_samples, prior_mu, prior_logvar, prior_mulogvar = prior_sample_result
+
+        dec_input_pack = self._get_dec_input_test(local_batch_size, cond_embedding, latent_samples)
+        da_logits, bow_logit, dec_inputs, dec_init_states, pred_attribute_embeddings = dec_input_pack
+
+        ctrl_attribute_embeddings = {
+            da: self.da_embedding(
+                torch.ones(local_batch_size, dtype=torch.long, device=self.device) * idx)
+            for idx, da in enumerate(self.da_vocab)}
+
+        dec_outss = []
+        ctrl_dec_outs = {}
+        dec_outs, _, final_ctx_state = inference_loop(self.dec_cell,
+                                                      self.dec_cell_proj,
+                                                      self.word_embedding,
+                                                      encoder_state=dec_init_states[0],
+                                                      start_of_sequence_id=self.go_id,
+                                                      end_of_sequence_id=self.eos_id,
+                                                      maximum_length=self.max_utt_len,
+                                                      num_decoder_symbols=self.vocab_size,
+                                                      context_vector=pred_attribute_embeddings[0],
+                                                      decode_type='greedy')
+        for i in range(1, num_samples):
+            temp_outs, _, _ = inference_loop(self.dec_cell,
+                                             self.dec_cell_proj,
+                                             self.word_embedding,
+                                             encoder_state=dec_init_states[i],
+                                             start_of_sequence_id=self.go_id,
+                                             end_of_sequence_id=self.eos_id,
+                                             maximum_length=self.max_utt_len,
+                                             num_decoder_symbols=self.vocab_size,
+                                             context_vector=pred_attribute_embeddings[i],
+                                             decode_type='greedy')
+            dec_outss.append(temp_outs)
+        if is_test_multi_da:
+            for key, value in ctrl_attribute_embeddings.items():
+                ctrl_dec_outs[key], _, _ = inference_loop(self.dec_cell,
+                                                          self.dec_cell_proj,
+                                                          self.word_embedding,
+                                                          encoder_state=dec_init_states[0],
+                                                          start_of_sequence_id=self.go_id,
+                                                          end_of_sequence_id=self.eos_id,
+                                                          maximum_length=self.max_utt_len,
+                                                          num_decoder_symbols=self.vocab_size,
+                                                          context_vector=value,
+                                                          decode_type='greedy')
+
+        model_output = {"dec_out": dec_outs, "dec_outss": dec_outss, "ctrl_dec_out": ctrl_dec_outs,
+                        "final_ctx_state": final_ctx_state, "bow_logit": bow_logit, "da_logit": da_logits[0],
+                        "prior_mulogvar": prior_mulogvar}
+
+        return model_output
+
+    def feed_train(self, feed_dict):
+        is_train_multiple = feed_dict.get("is_train_multiple", False)
+        num_samples = feed_dict["num_samples"]
+
+        context_lens, input_contexts, floors, \
+        topics, my_profile, ot_profile = self._to_device_context(feed_dict)
+
+        out_tok, out_das, output_lens = self._to_device_output(feed_dict)
+
+        output_embedded = self.word_embedding(out_tok)
+        if self.sent_type == 'bi-rnn':
+            output_embedding, _ = get_bi_rnn_encode(output_embedded, self.bi_sent_cell,
+                                                    self.max_utt_len)
+
+        relation_embedded = self.topic_embedding(topics)
+        local_batch_size = input_contexts.size(0)
+        max_dialog_len = input_contexts.size(1)
+        max_seq_len = input_contexts.size(-1)
+
+        enc_last_state = self.get_encoder_state(input_contexts, topics, floors,
+                                            True, context_lens, max_dialog_len, max_seq_len)
+
+        cond_list = [relation_embedded, my_profile, ot_profile, enc_last_state]
+        cond_embedding = torch.cat(cond_list, 1)
+
+        sample_result = self._sample_from_recog_network(local_batch_size, cond_embedding,
+                                                        num_samples, out_das, output_embedding,
+                                                        is_train_multiple)
+
+        latent_samples, recog_mu, recog_logvar, recog_mulogvar, \
+        ctrl_latent_samples, ctrl_recog_mus, ctrl_recog_logvars, ctrl_recog_mulogvars, \
+        attribute_embedding, ctrl_attribute_embeddings = sample_result
+
+        prior_sample_result = self._sample_from_prior_network(cond_embedding, num_samples)
+        _, prior_mu, prior_logvar, prior_mulogvar = prior_sample_result
+
+        ctrl_gen_inputs = None
+        if is_train_multiple:
+            ctrl_gen_inputs = {k: torch.cat([cond_embedding, v], 1) for (k, v) in
+                               ctrl_latent_samples.items()}
+
+        dec_input_pack = self._get_dec_input_train(local_batch_size, cond_embedding, is_train_multiple,
+                                                   latent_samples, ctrl_latent_samples,
+                                                   attribute_embedding, ctrl_attribute_embeddings)
+
+        da_logits, bow_logit, dec_inputs, dec_init_states, \
+        ctrl_dec_inputs, ctrl_dec_init_states = dec_input_pack
+
+
+        dec_outss = []
+        ctrl_dec_outs = {}
+        # remove eos token
+        input_tokens = out_tok[:, :-1].clone()
+        input_tokens[input_tokens == self.eos_id] = 0
+        if self.dec_keep_prob < 1.0:
+            keep_mask = input_tokens.new_empty(input_tokens.size()).bernoulli_(self.dec_keep_prob)
+            input_tokens = input_tokens * keep_mask
+        dec_input_embedded = self.word_embedding(input_tokens)
+        dec_seq_len = output_lens - 1
+
+        dec_input_embedded = fnn.dropout(dec_input_embedded, 1 - self.keep_prob, True)
+        dec_outs, _, final_ctx_state = train_loop(self.dec_cell,
+                                                  self.dec_cell_proj,
+                                                  dec_input_embedded,
+                                                  init_state=dec_init_states[0],
+                                                  context_vector=attribute_embedding,
+                                                  sequence_length=dec_seq_len,
+                                                  max_len=self.max_utt_len - 1)
+
+        if is_train_multiple:
+            for i in range(1, num_samples):
+                temp_outs, _, _ = inference_loop(self.dec_cell,
+                                                 self.dec_cell_proj,
+                                                 self.word_embedding,
+                                                 encoder_state=dec_init_states[i],
+                                                 start_of_sequence_id=self.go_id,
+                                                 end_of_sequence_id=self.eos_id,
+                                                 maximum_length=self.max_utt_len,
+                                                 num_decoder_symbols=self.vocab_size,
+                                                 context_vector=attribute_embedding,
+                                                 decode_type='greedy')
+                dec_outss.append(temp_outs)
+            for key, value in ctrl_attribute_embeddings.items():
+                ctrl_dec_outs[key], _, _ = inference_loop(self.dec_cell,
+                                                          self.dec_cell_proj,
+                                                          self.word_embedding,
+                                                          encoder_state=ctrl_dec_init_states[key],
+                                                          start_of_sequence_id=self.go_id,
+                                                          end_of_sequence_id=self.eos_id,
+                                                          maximum_length=self.max_utt_len,
+                                                          num_decoder_symbols=self.vocab_size,
+                                                          context_vector=value,
+                                                          decode_type='greedy')
+
+        model_output = {"dec_out": dec_outs, "dec_outss": dec_outss, "ctrl_dec_out": ctrl_dec_outs,
+                        "final_ctx_state": final_ctx_state, "bow_logit": bow_logit, "da_logit": da_logits[0],
+                        "out_token": out_tok, "out_das": out_das, "recog_mulogvar": recog_mulogvar,
+                        "prior_mulogvar": prior_mulogvar}
+        return model_output
+
     def forward(self, feed_dict):
         is_train = feed_dict["is_train"]
         is_train_multiple = feed_dict.get("is_train_multiple", False)
@@ -146,240 +508,17 @@ class CVAEModel(nn.Module):
         topics, my_profiles, ot_profiles, vec_outs, vec_out_lens, vec_out_das
         """
 
-        context_lens = feed_dict['context_lens'].to(self.device).squeeze()
-        input_contexts = feed_dict['vec_context'].to(self.device)
-        floors = feed_dict['vec_floors'].to(self.device)
-        out_tok = feed_dict['vec_outs'].to(self.device)
-        topics = feed_dict['topics'].to(self.device).squeeze()
-        my_profile = feed_dict['my_profile'].to(self.device)
-        ot_profile = feed_dict['ot_profile'].to(self.device)
-        out_das = feed_dict['out_das'].to(self.device).squeeze()
-        output_lens = feed_dict['out_lens'].to(self.device).squeeze()
-
-        # loader 에서 바로 출력 했기 때문에 forward 에서 padding + tensor 변환을 거침
-
-        local_batch_size = input_contexts.size(0)
-        max_dialog_len = input_contexts.size(1)
-        max_seq_len = input_contexts.size(-1)
-
-        input_contexts = input_contexts.view(-1, max_seq_len)
-        out_das = out_das.squeeze()
-        topics = topics.squeeze()
-
-        relation_embedded = self.topic_embedding(topics)
-        # if self.config['use_hcf']:
-        #    da_embedded = self.da_embedding(out_da)
-
-        input_embedded = self.word_embedding(input_contexts)
-
-        output_embedded = self.word_embedding(out_tok)
-
-        # only use bi-rnn
-        if self.sent_type == 'bi-rnn':
-            input_embedding, sent_size = get_bi_rnn_encode(input_embedded, self.bi_sent_cell,
-                                                           self.max_utt_len)
-            output_embedding, _ = get_bi_rnn_encode(output_embedded, self.bi_sent_cell,
-                                                    self.max_utt_len)
-        else:
-            raise ValueError("unk sent_type. select one in [bow, rnn, bi-rnn]")
-
-        # reshape input into dialogs
-        input_embedding = input_embedding.view(-1, max_dialog_len, sent_size)
-
-        if self.keep_prob < 1.0:
-            input_embedding = F.dropout(input_embedding, 1 - self.keep_prob, is_train)
-
-        # floors are already converted as one-hot
-        floor_one_hot = floors.new_zeros((floors.numel(), 2), dtype=torch.float)
-        floor_one_hot.data.scatter_(1, floors.view(-1, 1), 1)
-        floor_one_hot = floor_one_hot.view(-1, max_dialog_len, 2)
-
-        joint_embedding = torch.cat([input_embedding, floor_one_hot], 2)
-
-        # contextRNN
-        _, enc_last_state = dynamic_rnn(self.enc_cell, joint_embedding,
-                                        sequence_length=context_lens,
-                                        max_len=self.max_utt_len)
-        if self.num_layer > 1:
-            enc_last_state = torch.cat([_ for _ in torch.unbind(enc_last_state)], 1)
-        else:
-            enc_last_state = enc_last_state.squeeze(0)
-
-        if self.use_hcf:
-            attribute_embedding = self.da_embedding(out_das)
-            attribute_fc1 = self.attribute_fc1(attribute_embedding)
-
-            ctrl_attribute_embeddings = {
-                da: self.da_embedding(torch.ones(local_batch_size, dtype=torch.long, device=self.device) * idx)
-                for idx, da in enumerate(self.da_vocab)}
-            ctrl_attribute_fc1 = {k: self.attribute_fc1(v) for (k, v) in ctrl_attribute_embeddings.items()}
-
-        # 30, 5, 5, 600 // 640
-        cond_list = [relation_embedded, my_profile, ot_profile, enc_last_state]
-        cond_embedding = torch.cat(cond_list, 1)
-
-        # recogntion network
-        if self.use_hcf:
-            recog_input = torch.cat([cond_embedding, output_embedding, attribute_fc1], 1)
-            if is_train_multiple:
-                ctrl_recog_inputs = {k: torch.cat([cond_embedding, output_embedding, v], 1) for (k, v) in
-                                     ctrl_attribute_fc1.items()}
-        else:
-            recog_input = torch.cat([cond_embedding, output_embedding], 1)
-
-        recog_mulogvar = self.recog_mulogvar_net(recog_input)
-        recog_mu, recog_logvar = torch.chunk(recog_mulogvar, 2, 1)
-
-        if is_train_multiple:
-            ctrl_recog_mulogvars = {k: self.recog_mulogvar_net(v) for (k, v) in ctrl_recog_inputs.items()}
-            ctrl_recog_mus = {}
-            ctrl_recog_logvars = {}
-            for k in ctrl_recog_mulogvars.keys():
-                ctrl_recog_mus[k], ctrl_recog_logvars[k] = torch.chunk(ctrl_recog_mulogvars[k], 2, 1)
-
-        # prior network
-        prior_mulogvar = self.prior_mulogvar_net(cond_embedding)
-        prior_mu, prior_logvar = torch.chunk(prior_mulogvar, 2, 1)
-
-        # use sampled Z or posterior Z
-        if not is_train:
-            latent_samples = [sample_gaussian(prior_mu, prior_logvar) for _ in range(num_samples)]
-        else:
-            if not is_train_multiple:
-                latent_samples = [sample_gaussian(recog_mu, recog_logvar)]
-            if is_train_multiple:
-                latent_samples = [sample_gaussian(recog_mu, recog_logvar) for _ in range(num_samples)]
-                ctrl_latent_samples = {k: sample_gaussian(ctrl_recog_mus[k], ctrl_recog_logvars[k]) for k in
-                                       ctrl_recog_mulogvars.keys()}
-                ctrl_gen_inputs = {k: torch.cat([cond_embedding, v], 1) for (k, v) in ctrl_latent_samples.items()}
-
-        gen_inputs = [torch.cat([cond_embedding, latent_sample], 1) for latent_sample in latent_samples]
-
-        bow_logit = self.bow_project(gen_inputs[0])
-
-        if self.use_hcf:
-
-            da_logits = [self.da_project(gen_input) for gen_input in gen_inputs]
-            da_probs = [F.softmax(da_logit, dim=1) for da_logit in da_logits]
-            pred_attribute_embeddings = [torch.matmul(da_prob, self.da_embedding.weight) for da_prob in da_probs]
-
-            if not is_train:
-                selected_attr_embedding = pred_attribute_embeddings
-                dec_inputs = [torch.cat((gen_input, selected_attr_embedding[i]), 1) for i, gen_input in
-                              enumerate(gen_inputs)]
-            else:
-                selected_attr_embedding = attribute_embedding
-                dec_inputs = [torch.cat((gen_input, selected_attr_embedding), 1) for gen_input in gen_inputs]
-                if is_train_multiple:
-                    ctrl_dec_inputs = {k: torch.cat((ctrl_gen_inputs[k], ctrl_attribute_embeddings[k]), 1) for k in
-                                       ctrl_gen_inputs.keys()}
-        else:
-            da_logits = [gen_input.new_zeros(local_batch_size, self.da_size) for gen_input in gen_inputs]
-            dec_inputs = [gen_input for gen_input in gen_inputs]
-
-        # decoder
-
-        if self.num_layer > 1:
-            dec_init_states = [[self.dec_init_state_net[i](dec_input) for i in range(self.num_layer)] for dec_input in
-                               dec_inputs]
-            dec_init_states = [torch.stack(dec_init_state) for dec_init_state in dec_init_states]
-            if is_train and is_train_multiple:
-                ctrl_dec_init_states = {}
-                for k, v in ctrl_dec_inputs.items():
-                    ctrl_dec_init_states[k] = [self.dec_init_state_net[i](v) for i in range(self.num_layer)]
-        else:
-            dec_init_states = [self.dec_init_state_net(dec_input).unsqueeze(0) for dec_input in dec_inputs]
-            if is_train and is_train_multiple:
-                ctrl_dec_init_states = {k: self.dec_init_state_net(v).unsqueeze(0) for (k, v) in
-                                        ctrl_dec_inputs.items()}
-
-        dec_outss = []
-        ctrl_dec_outs = {}
-        if not is_train:
-            dec_outs, _, final_ctx_state = inference_loop(self.dec_cell,
-                                                          self.dec_cell_proj,
-                                                          self.word_embedding,
-                                                          encoder_state=dec_init_states[0],
-                                                          start_of_sequence_id=self.go_id,
-                                                          end_of_sequence_id=self.eos_id,
-                                                          maximum_length=self.max_utt_len,
-                                                          num_decoder_symbols=self.vocab_size,
-                                                          context_vector=selected_attr_embedding[0],
-                                                          decode_type='greedy')
-            for i in range(1, num_samples):
-                temp_outs, _, _ = inference_loop(self.dec_cell,
-                                                 self.dec_cell_proj,
-                                                 self.word_embedding,
-                                                 encoder_state=dec_init_states[i],
-                                                 start_of_sequence_id=self.go_id,
-                                                 end_of_sequence_id=self.eos_id,
-                                                 maximum_length=self.max_utt_len,
-                                                 num_decoder_symbols=self.vocab_size,
-                                                 context_vector=selected_attr_embedding[i],
-                                                 decode_type='greedy')
-                dec_outss.append(temp_outs)
-            if is_test_multi_da:
-                for key, value in ctrl_attribute_embeddings.items():
-                    ctrl_dec_outs[key], _, _ = inference_loop(self.dec_cell,
-                                                              self.dec_cell_proj,
-                                                              self.word_embedding,
-                                                              encoder_state=dec_init_states[0],
-                                                              start_of_sequence_id=self.go_id,
-                                                              end_of_sequence_id=self.eos_id,
-                                                              maximum_length=self.max_utt_len,
-                                                              num_decoder_symbols=self.vocab_size,
-                                                              context_vector=value,
-                                                              decode_type='greedy')
+        if is_train:
+            model_output = self.feed_train(feed_dict)
 
         else:
-            # remove eos token
-            input_tokens = out_tok[:, :-1].clone()
-            input_tokens[input_tokens == self.eos_id] = 0
-            if self.dec_keep_prob < 1.0:
-                keep_mask = input_tokens.new_empty(input_tokens.size()).bernoulli_(self.dec_keep_prob)
-                input_tokens = input_tokens * keep_mask
-            dec_input_embedded = self.word_embedding(input_tokens)
-            dec_seq_len = output_lens - 1
+            # TODO: 이 output은 recog_mulogvar가 없으므로 dummy 값을 넣어주어야 합니다.
+            out_tok, out_das, output_lens = self._to_device_output(feed_dict)
+            model_output = self.feed_inference(feed_dict)
+            model_output["out_tok"] = out_tok
+            model_output["out_das"] = out_das
 
-            dec_input_embedded = F.dropout(dec_input_embedded, 1 - self.keep_prob, is_train)
-            dec_outs, _, final_ctx_state = train_loop(self.dec_cell,
-                                                      self.dec_cell_proj,
-                                                      dec_input_embedded,
-                                                      init_state=dec_init_states[0],
-                                                      context_vector=selected_attr_embedding,
-                                                      sequence_length=dec_seq_len,
-                                                      max_len=self.max_utt_len - 1)
-
-            if is_train_multiple:
-                for i in range(1, num_samples):
-                    temp_outs, _, _ = inference_loop(self.dec_cell,
-                                                     self.dec_cell_proj,
-                                                     self.word_embedding,
-                                                     encoder_state=dec_init_states[i],
-                                                     start_of_sequence_id=self.go_id,
-                                                     end_of_sequence_id=self.eos_id,
-                                                     maximum_length=self.max_utt_len,
-                                                     num_decoder_symbols=self.vocab_size,
-                                                     context_vector=selected_attr_embedding,
-                                                     decode_type='greedy')
-                    dec_outss.append(temp_outs)
-                for key, value in ctrl_attribute_embeddings.items():
-                    ctrl_dec_outs[key], _, _ = inference_loop(self.dec_cell,
-                                                              self.dec_cell_proj,
-                                                              self.word_embedding,
-                                                              encoder_state=ctrl_dec_init_states[key],
-                                                              start_of_sequence_id=self.go_id,
-                                                              end_of_sequence_id=self.eos_id,
-                                                              maximum_length=self.max_utt_len,
-                                                              num_decoder_symbols=self.vocab_size,
-                                                              context_vector=value,
-                                                              decode_type='greedy')
-
-        model_output = {"dec_out": dec_outs, "dec_outss": dec_outss, "ctrl_dec_out": ctrl_dec_outs,
-                        "final_ctx_state": final_ctx_state, "bow_logit": bow_logit, "da_logit": da_logits[0],
-                        "out_token": out_tok, "out_das": out_das, "recog_mulogvar": recog_mulogvar,
-                        "prior_mulogvar": prior_mulogvar}
-
+        # TODO: context_lens를 빼올 수 있는 방법을 생각해봅시다.
         output_sents, ctrl_output_sents, sampled_output_sents, output_logits, real_output_sents, real_output_logits, input_context_sents = \
             self.index2sent(feed_dict['vec_context'], context_lens, model_output)
         model_output["output_sents"] = output_sents
