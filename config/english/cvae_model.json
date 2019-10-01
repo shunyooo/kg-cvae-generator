@@ -1,0 +1,33 @@
+{
+
+  "max_vocab_count": 10000,
+  "use_hcf": true,
+
+  "update_limit": 3000,
+  "sent_type": "bi-rnn",
+  "latent_size": 200,
+  "full_kl_step": 10000,
+  "dec_keep_prob": 1.0,
+  "cell_type": "gru",
+  "embed_size": 200,
+  "topic_embed_size": 67,
+
+  "da_size": 42,
+  "da_embed_size": 30,
+  "da_hidden_size": 30,
+
+  "ctx_cell_size": 600,
+  "sent_cell_size": 300,
+  "dec_cell_size": 400,
+
+  "max_utt_len": 40,
+  "num_layer": 1,
+
+  "bow_hidden_size": 400,
+  "act_hidden_size": 400,
+  "meta_embed_size": 4,
+
+  "keep_prob": 1.0,
+  "device": "cuda"
+
+}

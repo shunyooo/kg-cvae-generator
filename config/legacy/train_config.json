@@ -1,0 +1,71 @@
+{
+  "train_file_path": "./dataset/processed/train/shuffled_dataset.p",
+  "valid_file_path": "./dataset/processed/valid/shuffled_dataset.p",
+  "test_file_path": "./dataset/processed/test/shuffled_dataset.p",
+  "vocab_path": "./dataset/dialog_vocab.txt",
+  "word2vec_path": "/scatter/pingpong/pretrained_embedding/namuwiki_fasttext_300_ws_05_mc_20_neg_10_ns.bin",
+  "work_dir": "./working",
+  "test_path": "test_v1",
+  "output_path": "./working/test_output.txt",
+
+  "resume": false,
+  "forward_only": false,
+  "save_model": true,
+
+  "max_vocab_count": 10000,
+
+  "use_hcf": true,
+
+  "sent_type": "bi-rnn",
+  "latent_size": 50,
+  "full_kl_step": 10000,
+  "dec_keep_prob": 1.0,
+  "meta_var": 6,
+
+  "train_ratio": 0.95,
+
+  "cell_type": "gru",
+  "embed_size": 300,
+  "meta_embed_size": 2,
+  "relation_size": 2,
+  "relation_embed_size": 2,
+
+  "sentiment_size": 5,
+  "sentiment_embed_size": 3,
+  "sentiment_hidden_size": 3,
+
+  "ctx_cell_size": 600,
+  "sent_cell_size": 300,
+  "dec_cell_size": 400,
+
+  "backward_size": 5,
+  "step_size": 1,
+  "max_utt_len": 18,
+  "num_layer": 1,
+
+  "op": "adam",
+  "grad_clip": 5.0,
+  "init_w": 0.08,
+  "batch_size": 10,
+  "init_lr": 0.001,
+  "lr_hold": 1,
+  "lr_decay": 0.6,
+  "keep_prob": 1.0,
+  "improve_threshold": 0.996,
+  "patient_increase": 2.0,
+  "patience": 5,
+  "early_stop": true,
+  "max_epoch": 40,
+  "grad_noise": 0.0,
+
+  "bow_hidden_size": 400,
+  "act_hidden_size": 400,
+
+  "meta_size": 1,
+
+  "log_freq": 500,
+
+  "use_multi_gpu": false,
+  "device": "cuda",
+  "num_workers": 0
+}

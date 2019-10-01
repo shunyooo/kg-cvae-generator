@@ -1,0 +1,10 @@
+{
+  "data_dir": "/scatter/workspace/generator/data/",
+  "train_filename": "dialog_eng_train.json",
+  "test_filename": "dialog_eng_test.json",
+  "valid_filename": "dialog_eng_valid.json",
+
+  "word2vec_path": "/scatter/workspace/generator/embedding/glove.twitter.27B.200d.txt",
+  "embed_size": 200,
+  "max_vocab_count": 10000
+}
