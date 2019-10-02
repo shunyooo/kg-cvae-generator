@@ -191,11 +191,17 @@ class CVAEModel(nn.Module):
             if is_train_multiple:
                 ctrl_recog_inputs = {k: torch.cat([cond_embedding, output_embedding, v], 1) for (k, v) in
                                      ctrl_attribute_fc1.items()}
+            else:
+                ctrl_recog_inputs = {}
         else:
+            attribute_embedding = None
+            ctrl_attribute_embeddings = None
             recog_input = torch.cat([cond_embedding, output_embedding], 1)
             if is_train_multiple:
                 ctrl_recog_inputs = {da: torch.cat([cond_embedding, output_embedding], 1)
                                      for idx, da in enumerate(self.da_vocab)}
+            else:
+                ctrl_recog_inputs = {}
 
         recog_mulogvar = self.recog_mulogvar_net(recog_input)
         recog_mu, recog_logvar = torch.chunk(recog_mulogvar, 2, 1)
@@ -203,6 +209,8 @@ class CVAEModel(nn.Module):
         ctrl_latent_samples = {}
         ctrl_recog_mus = {}
         ctrl_recog_logvars = {}
+        ctrl_recog_mulogvars = {}
+
 
         if is_train_multiple:
             latent_samples = [sample_gaussian(recog_mu, recog_logvar) for _ in range(num_samples)]
@@ -308,6 +316,7 @@ class CVAEModel(nn.Module):
             da_logits = [gen_input.new_zeros(local_batch_size, self.da_size) for gen_input in
                          gen_inputs]
             dec_inputs = [gen_input for gen_input in gen_inputs]
+            pred_attribute_embeddings = []
 
         # decoder
 
@@ -412,6 +421,8 @@ class CVAEModel(nn.Module):
         if self.sent_type == 'bi-rnn':
             output_embedding, _ = get_bi_rnn_encode(output_embedded, self.bi_sent_cell,
                                                     self.max_utt_len)
+        else:
+            raise ValueError("unk sent_type. select one in [bow, rnn, bi-rnn]")
 
         relation_embedded = self.topic_embedding(topics)
         local_batch_size = input_contexts.size(0)
