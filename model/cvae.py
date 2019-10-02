@@ -524,7 +524,7 @@ class CVAEModel(nn.Module):
         else:
             out_tok, out_das, output_lens = self._to_device_output(feed_dict)
             model_output = self.feed_inference(feed_dict)
-            model_output["out_tok"] = out_tok
+            model_output["out_token"] = out_tok
             model_output["out_das"] = out_das
 
         vec_context = model_output["vec_context"]
