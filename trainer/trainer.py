@@ -320,6 +320,7 @@ class Trainer(ABC):
         """
         self.optimizer.zero_grad()
         model_input["is_train"] = True
+        model_input["is_valid"] = False
         model_input["num_samples"] = self.num_samples
         model_output = self.model.forward(model_input)
 
@@ -339,6 +340,7 @@ class Trainer(ABC):
         :return: return model output and loss as dictionary
         """
         model_input["is_train"] = self.is_valid_true
+        model_input["is_valid"] = True
         model_input["is_train_multiple"] = True
         model_input["is_test_multi_da"] = self.is_test_multi_da
         model_input["num_samples"] = self.num_samples
@@ -359,6 +361,7 @@ class Trainer(ABC):
         :return: return model output and loss as dictionary
         """
         model_input["is_train"] = False
+        model_input["is_valid"] = False
         model_input["is_test_multi_da"] = self.is_test_multi_da
         model_input["num_samples"] = self.num_samples
 
