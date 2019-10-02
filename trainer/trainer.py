@@ -219,7 +219,8 @@ class Trainer(ABC):
         model_output,
         model_input,
         current_step,
-        is_train
+        is_train,
+        is_valid
     ):
         """
         calculate the loss using criterion with model_output, model_input
@@ -227,6 +228,7 @@ class Trainer(ABC):
         :param model_input: model input which feed into forward method
         :param current_step: current step.
         :param is_train: if model is in train_mode or not.
+        :param is_valid: if model is in valid_mode or not.
         :return: loss score
         """
         raise NotImplementedError
@@ -320,14 +322,13 @@ class Trainer(ABC):
         """
         self.optimizer.zero_grad()
         model_input["is_train"] = True
-        model_input["is_valid"] = False
         model_input["num_samples"] = self.num_samples
         model_output = self.model.forward(model_input)
 
         targets = self.train_outputs
 
         recorded_model_output = {target: model_output[target] for target in targets}
-        loss = self.calculate_loss(model_output, model_input, current_step, True)
+        loss = self.calculate_loss(model_output, model_input, current_step, True, False)
         self.update_gradient(loss["main_loss"])
 
         return {"model_output": recorded_model_output, "loss": loss}
@@ -340,7 +341,6 @@ class Trainer(ABC):
         :return: return model output and loss as dictionary
         """
         model_input["is_train"] = self.is_valid_true
-        model_input["is_valid"] = True
         model_input["is_train_multiple"] = True
         model_input["is_test_multi_da"] = self.is_test_multi_da
         model_input["num_samples"] = self.num_samples
@@ -348,7 +348,7 @@ class Trainer(ABC):
         targets = self.valid_outputs
         with torch.no_grad():
             model_output = self.model.forward(model_input)
-            loss = self.calculate_loss(model_output, model_input, current_step, False)
+            loss = self.calculate_loss(model_output, model_input, current_step, False, True)
         recorded_model_output = {target: model_output[target] for target in targets}
 
         return {"model_output": recorded_model_output, "loss": loss}
@@ -361,7 +361,6 @@ class Trainer(ABC):
         :return: return model output and loss as dictionary
         """
         model_input["is_train"] = False
-        model_input["is_valid"] = False
         model_input["is_test_multi_da"] = self.is_test_multi_da
         model_input["num_samples"] = self.num_samples
 
@@ -369,7 +368,7 @@ class Trainer(ABC):
 
         with torch.no_grad():
             model_output = self.model.forward(model_input)
-            loss = self.calculate_loss(model_output, model_input, current_step, False)
+            loss = self.calculate_loss(model_output, model_input, current_step, False, False)
         recorded_model_output = {target: model_output[target] for target in targets}
 
         return {"model_input": model_input, "model_output": recorded_model_output, "loss": loss}

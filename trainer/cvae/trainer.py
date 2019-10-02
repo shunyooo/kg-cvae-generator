@@ -39,16 +39,18 @@ class CVAETrainer(trainer.Trainer):
                        model_output,
                        model_input,
                        current_step,
-                       is_train):
+                       is_train,
+                       is_valid):
         """
         calculate the loss using criterion with model_output, model_input
         :param model_output: forward output from model
         :param model_input: model input which feed into forward method
         :param current_step: current step.
         :param is_train: if model is in train_mode or not.
+        :param is_valid: if model is in valid_mode or not.
         :return: loss score
         """
-        return self.criterion(model_output, model_input, current_step, is_train)
+        return self.criterion(model_output, model_input, current_step, is_train, is_valid)
 
     def report(self, metrics: List[dict], is_train: Optional[bool] = True):
         """
