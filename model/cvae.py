@@ -6,7 +6,7 @@ import numpy as np
 
 from .decoder_fn_lib import inference_loop, train_loop
 from .model_utils import sample_gaussian, dynamic_rnn, get_bi_rnn_encode, get_rnncell
-
+from .index2sent import index2sent
 
 class CVAEModel(nn.Module):
     def __init__(self, data_config, model_config, vocab_class):
@@ -392,8 +392,10 @@ class CVAEModel(nn.Module):
                                                           decode_type='greedy')
 
         model_output = {"dec_out": dec_outs, "dec_outss": dec_outss, "ctrl_dec_out": ctrl_dec_outs,
-                        "final_ctx_state": final_ctx_state, "bow_logit": bow_logit, "da_logit": da_logits[0],
-                        "prior_mulogvar": prior_mulogvar}
+                        "final_ctx_state": final_ctx_state,
+                        "bow_logit": bow_logit, "da_logit": da_logits[0],
+                        "prior_mulogvar": prior_mulogvar,
+                        "context_lens": context_lens, "vec_context": input_contexts}
 
         return model_output
 
@@ -492,9 +494,11 @@ class CVAEModel(nn.Module):
                                                           decode_type='greedy')
 
         model_output = {"dec_out": dec_outs, "dec_outss": dec_outss, "ctrl_dec_out": ctrl_dec_outs,
-                        "final_ctx_state": final_ctx_state, "bow_logit": bow_logit, "da_logit": da_logits[0],
-                        "out_token": out_tok, "out_das": out_das, "recog_mulogvar": recog_mulogvar,
-                        "prior_mulogvar": prior_mulogvar}
+                        "final_ctx_state": final_ctx_state,
+                        "bow_logit": bow_logit, "da_logit": da_logits[0],
+                        "out_token": out_tok, "out_das": out_das,
+                        "recog_mulogvar": recog_mulogvar, "prior_mulogvar": prior_mulogvar,
+                        "context_lens": context_lens, "vec_context": input_contexts}
         return model_output
 
     def forward(self, feed_dict):
@@ -503,24 +507,23 @@ class CVAEModel(nn.Module):
         is_test_multi_da = feed_dict.get("is_test_multi_da", True)
         num_samples = feed_dict["num_samples"]
 
-        """
-        vec_context, vec_context_lens, vec_floors, 
-        topics, my_profiles, ot_profiles, vec_outs, vec_out_lens, vec_out_das
-        """
-
         if is_train:
             model_output = self.feed_train(feed_dict)
 
         else:
-            # TODO: 이 output은 recog_mulogvar가 없으므로 dummy 값을 넣어주어야 합니다.
             out_tok, out_das, output_lens = self._to_device_output(feed_dict)
             model_output = self.feed_inference(feed_dict)
             model_output["out_tok"] = out_tok
             model_output["out_das"] = out_das
 
-        # TODO: context_lens를 빼올 수 있는 방법을 생각해봅시다.
-        output_sents, ctrl_output_sents, sampled_output_sents, output_logits, real_output_sents, real_output_logits, input_context_sents = \
-            self.index2sent(feed_dict['vec_context'], context_lens, model_output)
+        vec_context = model_output["vec_context"]
+        context_lens = model_output["context_lens"]
+
+        output_sents, ctrl_output_sents, sampled_output_sents, \
+        output_logits, real_output_sents, real_output_logits, input_context_sents = \
+            index2sent(vec_context, context_lens, model_output, True, self.eos_id, self.vocab,
+                       self.da_vocab)
+
         model_output["output_sents"] = output_sents
         model_output["ctrl_output_sents"] = ctrl_output_sents
         model_output["sampled_output_sents"] = sampled_output_sents
@@ -531,111 +534,4 @@ class CVAEModel(nn.Module):
 
         return model_output
 
-    def index2sent(self, input_contexts, context_lens, model_output):
-        # shape of dec_out_would be (Batch size, sentence len, size
-        dec_out = model_output["dec_out"].cpu()
-        dec_outss = [e.cpu() for e in model_output["dec_outss"]]
-        ctrl_dec_out = model_output["ctrl_dec_out"]
-        ctrl_dec_out = {k: v.cpu() for (k, v) in ctrl_dec_out.items()}
-        da_logits = model_output["da_logit"].cpu()
-        real_outputs = model_output["out_token"].cpu()
-        real_das = model_output["out_das"].cpu()
-        input_contexts = input_contexts.cpu()
-        context_lens = context_lens.cpu()
 
-        input_context_sents = []
-        for batch_id, target_context in enumerate(input_contexts):
-            input_context_sent = []
-            context_len = context_lens[batch_id]
-            valid_contexts = target_context[:context_len]
-            for sent_id, context_sent in enumerate(valid_contexts):
-                sent = []
-                for dec_index in context_sent:
-                    if dec_index == self.eos_id:
-                        sent.append("</s>")
-                        break
-                    else:
-                        word = self.vocab[dec_index]
-                        sent.append(word)
-                input_context_sent.append(sent)
-            input_context_sents.append(input_context_sent)
-
-        output_sentences = []
-        real_output_sents = []
-        output_logits = []
-        real_output_logits = []
-        ctrl_output_sents = {k: [] for k in ctrl_dec_out.keys()}
-        sampled_output_sents = [[] for _ in range(len(dec_outss))]
-
-        _, dec_indice_sents = torch.max(dec_out, 2)
-        ctrl_dec_indice_sents = {}
-        for k in ctrl_dec_out.keys():
-            _, ctrl_dec_indice_sents[k] = torch.max(ctrl_dec_out[k], 2)
-        sampled_dec_indice_sents = []
-        for e in dec_outss:
-            _, temp_dec_indice_sents = torch.max(e, 2)
-            sampled_dec_indice_sents.append(temp_dec_indice_sents)
-        _, da_logits = torch.max(da_logits, 1)
-
-        dec_indice_sents = dec_indice_sents.numpy()
-        ctrl_dec_indice_sents = {k: v.numpy() for (k, v) in ctrl_dec_indice_sents.items()}
-        sampled_dec_indice_sents = [e.numpy() for e in sampled_dec_indice_sents]
-        da_logits = da_logits.numpy()
-
-        for dec_indice in dec_indice_sents:
-            sent = []
-            for dec_index in dec_indice:
-                if dec_index == self.eos_id:
-                    sent.append("</s>")
-                    break
-                else:
-                    word = self.vocab[dec_index]
-                    sent.append(word)
-            output_sentences.append(sent)
-
-        for k in ctrl_dec_indice_sents.keys():
-            for dec_indice in ctrl_dec_indice_sents[k]:
-                sent = []
-                for dec_index in dec_indice:
-                    if dec_index == self.eos_id:
-                        sent.append("</s>")
-                        break
-                    else:
-                        word = self.vocab[dec_index]
-                        sent.append(word)
-                ctrl_output_sents[k].append(sent)
-
-        for i, sampled_dec_indice_sent in enumerate(sampled_dec_indice_sents):
-            for dec_indice in sampled_dec_indice_sent:
-                sent = []
-                for dec_index in dec_indice:
-                    if dec_index == self.eos_id:
-                        sent.append("</s>")
-                        break
-                    else:
-                        word = self.vocab[dec_index]
-                        sent.append(word)
-                sampled_output_sents[i].append(sent)
-
-        for da_logit in da_logits:
-            da_word = self.da_vocab[da_logit]
-            output_logits.append(da_word)
-
-        for real_output in real_outputs:
-            real_sent = []
-            for real_out_index in real_output:
-                if real_out_index == self.eos_id:
-                    real_sent.append("</s>")
-                    break
-                else:
-                    word = self.vocab[real_out_index]
-                    real_sent.append(word)
-            real_output_sents.append(real_sent)
-
-        for real_da_logit in real_das:
-            da_word = self.da_vocab[real_da_logit]
-            real_output_logits.append(da_word)
-
-        return output_sentences, ctrl_output_sents, sampled_output_sents, output_logits, \
-               real_output_sents, real_output_logits, \
-               input_context_sents
