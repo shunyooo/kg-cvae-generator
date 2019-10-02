@@ -10,23 +10,15 @@ class CVAELoss(nn.Module):
         self.use_hcf = config["use_hcf"]
         self.full_kl_step = config["full_kl_step"]
 
-    def forward(self, model_output, model_input, current_step, is_train):
+    def forward(self, model_output, model_input, current_step, is_train, is_valid):
         out_token = model_output["out_token"]
         out_das = model_output["out_das"]
         da_logit = model_output["da_logit"]
         bow_logit = model_output["bow_logit"]
         dec_out = model_output["dec_out"]
 
-        recog_mulogvar = model_output["recog_mulogvar"]
-        prior_mulogvar = model_output["prior_mulogvar"]
-
-        recog_mu, recog_logvar = torch.chunk(recog_mulogvar, 2, 1)
-        prior_mu, prior_logvar = torch.chunk(prior_mulogvar, 2, 1)
-
-        return self.calculate_loss(dec_out, bow_logit, da_logit,
-                                       out_token, out_das,
-                                       recog_mu, recog_logvar, prior_mu, prior_logvar,
-                                       is_train, current_step)
+        return self.calculate_loss(dec_out, bow_logit, da_logit, out_token, out_das,
+                                       model_output, is_train, is_valid, current_step)
 
     def calculate_seq_loss(self, dec_out, bow_logit, da_logit, out_token, out_das):
         labels = out_token.clone()
@@ -55,6 +47,7 @@ class CVAELoss(nn.Module):
         else:
             avg_sentiment_loss = avg_bow_loss.new_tensor(0)
             avg_sentiment_acc = 0.0
+
         return {"avg_rc_loss": avg_rc_loss,
                 "rc_ppl": rc_ppl,
                 "avg_sentiment_loss": avg_sentiment_loss,
@@ -70,31 +63,56 @@ class CVAELoss(nn.Module):
         return kld
 
     def calculate_kl_loss(self, recog_mu, recog_logvar, prior_mu, prior_logvar,
-                          is_train, current_step):
+                          is_valid, current_step):
+        """
+        Calculate KLD (Kullback Leibler Divergence)
+        between the recognition network and the prior network.
+
+        if is_valid is True, then kl_weights are fixed to 1.
+        else, then kl_weights will be linearly increased to 1 with given step limit value.
+
+
+        :param recog_mu: The mean value of Recognition Network.
+        :param recog_logvar: The variance of Recognition Network.
+        :param prior_mu: The prior value of Recognition Network.
+        :param prior_logvar: The variance of Recognition Network.
+        :param is_valid: Is valid mode or not.
+        :param current_step: Current step in training process.
+        :return:
+        """
+
         kld = self.gaussian_kld(recog_mu, recog_logvar, prior_mu, prior_logvar)
         avg_kld = torch.mean(kld)
-        if is_train:
+        if not is_valid:
             kl_weights = min((current_step / self.full_kl_step), 1.0)
         else:
             kl_weights = 1.0
 
         return {"avg_kl_loss": avg_kld, "kl_weights": kl_weights}
 
-    def calculate_loss(self, dec_out, bow_logit, da_logit,
-                                       out_token, out_das,
-                                       recog_mu, recog_logvar, prior_mu, prior_logvar,
-                                       is_train, current_step):
+    def calculate_loss(self, dec_out, bow_logit, da_logit, out_token, out_das,
+                                       model_output, is_train, is_valid, current_step):
 
         losses = {}
         seq_loss = self.calculate_seq_loss(dec_out, bow_logit, da_logit, out_token, out_das)
-        kl_loss = self.calculate_kl_loss(recog_mu, recog_logvar, prior_mu, prior_logvar,
-                                         is_train, current_step)
-
         losses.update(seq_loss)
-        losses.update(kl_loss)
 
-        elbo = losses["avg_rc_loss"] + losses["kl_weights"] * losses["avg_kl_loss"]
-        aug_elbo = losses["avg_bow_loss"] + losses["avg_sentiment_loss"] + elbo
+        if is_train:
+            recog_mulogvar = model_output["recog_mulogvar"]
+            prior_mulogvar = model_output["prior_mulogvar"]
+
+            recog_mu, recog_logvar = torch.chunk(recog_mulogvar, 2, 1)
+            prior_mu, prior_logvar = torch.chunk(prior_mulogvar, 2, 1)
+
+            kl_loss = self.calculate_kl_loss(recog_mu, recog_logvar, prior_mu, prior_logvar,
+                                             is_valid, current_step)
+            losses.update(kl_loss)
+            elbo = losses["avg_rc_loss"] + losses["kl_weights"] * losses["avg_kl_loss"]
+            aug_elbo = losses["avg_bow_loss"] + losses["avg_sentiment_loss"] + elbo
+
+        else:
+            elbo = losses["avg_rc_loss"]
+            aug_elbo = losses["avg_bow_loss"] + losses["avg_sentiment_loss"] + elbo
 
         losses["main_loss"] = aug_elbo
         return losses
