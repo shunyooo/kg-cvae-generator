@@ -1,5 +1,5 @@
 {
-  "model_path": "./work/weights/kor_cvae_new_model_{0}.pth",
+  "model_path": "./work/weights/kor_cvae_model_{0}.pth",
   "epoch": 50,
   "save_epoch_step": 5,
 
