@@ -235,11 +235,11 @@ class CVAEModel(nn.Module):
         return latent_samples, prior_mu, prior_logvar, prior_mulogvar
 
     def _to_device_context(self, feed_dict):
-        context_lens = feed_dict['context_lens'].to(self.device).squeeze()
+        context_lens = feed_dict['context_lens'].to(self.device).squeeze(-1)
         input_contexts = feed_dict['vec_context'].to(self.device)
         floors = feed_dict['vec_floors'].to(self.device)
 
-        topics = feed_dict['topics'].to(self.device).squeeze()
+        topics = feed_dict['topics'].to(self.device).squeeze(-1)
         my_profile = feed_dict['my_profile'].to(self.device)
         ot_profile = feed_dict['ot_profile'].to(self.device)
 
@@ -247,8 +247,8 @@ class CVAEModel(nn.Module):
 
     def _to_device_output(self, feed_dict):
         out_tok = feed_dict['vec_outs'].to(self.device)
-        out_das = feed_dict['out_das'].to(self.device).squeeze()
-        output_lens = feed_dict['out_lens'].to(self.device).squeeze()
+        out_das = feed_dict['out_das'].to(self.device).squeeze(-1)
+        output_lens = feed_dict['out_lens'].to(self.device).squeeze(-1)
 
         return out_tok, out_das, output_lens
 
