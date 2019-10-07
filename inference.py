@@ -12,7 +12,6 @@ from data_apis.dataloader import get_cvae_collate
 from model.cvae import CVAEModel
 
 import tqdm
-import json
 
 corpus_config_path = './config/korean/cvae_corpus_small.json'
 dataset_config_path = './config/korean/cvae_dataset.json'
@@ -27,13 +26,13 @@ overall = {
 }
 
 
-def inference(model, data_loader, trainer_config, num_samples):
+def inference(model, data_loader, trainer_config):
     test_outputs = []
 
     iterator = tqdm.tqdm(data_loader, desc="Inference")
 
     is_test_multi_da = trainer_config["is_test_multi_da"]
-    assert num_samples <= trainer_config["num_samples"]
+    num_samples = trainer_config["num_samples"]
 
     for model_input in iterator:
         model_input["is_train"] = False

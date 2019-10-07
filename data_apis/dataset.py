@@ -6,6 +6,16 @@ import numpy as np
 class CVAEDataset(Dataset):
     @staticmethod
     def slice_and_pad(sent, max_len, pad_token_idx, do_pad=True):
+        """
+        make sentence length the same as pre-defined maximum length
+        if sentence length exceeds maximum length, remove tokens after max_len
+        otherwise, add pad tokens until the sentence length reaches max_len
+        :param sent: sentence to operate
+        :param max_len: pre-defined maximum length of a sentence
+        :param pad_token_idx: index of <PAD> token in vocab
+        :param do_pad: if False, do not add pad tokens (return sent as it is)
+        :return: sliced (or padded) sentence
+        """
         if len(sent) >= max_len:
             return sent[0:max_len-1] + [sent[-1]], max_len
         elif do_pad:
@@ -14,6 +24,14 @@ class CVAEDataset(Dataset):
             return sent, len(sent)
 
     def __init__(self, name, data, meta_data, language, config):
+        """
+        class for dataset of kgCVAE
+        :param name: name of dataset
+        :param data: list of dialog instances
+        :param meta_data: list of meta features
+        :param language: 'eng' for English dataset, 'kor' for Korean dataset
+        :param config: config object for dataset
+        """
         assert len(data) == len(meta_data)
         self.name = name
         self.data_lens = [len(line) for line in data]

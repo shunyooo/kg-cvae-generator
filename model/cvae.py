@@ -8,8 +8,15 @@ from .decoder_fn_lib import inference_loop, train_loop
 from .model_utils import sample_gaussian, dynamic_rnn, get_bi_rnn_encode, get_rnncell
 from .index2sent import index2sent
 
+
 class CVAEModel(nn.Module):
     def __init__(self, data_config, model_config, vocab_class):
+        """
+        class for model architecture of kgCVAE
+        :param data_config: config object for dataset
+        :param model_config: config object for model specification
+        :param vocab_class: vocabularies for training
+        """
         super(CVAEModel, self).__init__()
         self.data_config = data_config
         self.model_config = model_config
@@ -136,7 +143,18 @@ class CVAEModel(nn.Module):
         self.dec_cell_proj = nn.Linear(self.dec_cell_size, self.vocab_size)
 
     def get_encoder_state(self, input_contexts, topics, floors, is_train, context_lens,
-                                 max_dialog_len, max_seq_len):
+                          max_dialog_len, max_seq_len):
+        """
+        compute the last hidden state of encoder RNN
+        :param input_contexts: vectors of preceding utterances to be fed to the encoder
+        :param topics: meta features
+        :param floors: conversational floor (1 if the utterance is from the same speaker, o.w. 0)
+        :param is_train: if True, apply dropout
+        :param context_lens: number of preceding utterances
+        :param max_dialog_len: maximum length of dialogs in input_contexts
+        :param max_seq_len: maximum length of sentences in input_contexts
+        :return: the last hidden state of encoder
+        """
 
         input_contexts = input_contexts.view(-1, max_seq_len)
 
@@ -178,6 +196,18 @@ class CVAEModel(nn.Module):
 
     def _sample_from_recog_network(self, local_batch_size, cond_embedding, num_samples,
                                    out_das, output_embedding, is_train_multiple):
+        """
+        sample from latent distribution constructed by recognition network
+        :param local_batch_size: batch size
+        :param cond_embedding: embedding vector of (preceding utterances of dialog, meta features, floors)
+        :param num_samples: number of samples to extract
+        :param out_das: ground truth dialog act
+        :param output_embedding: embedding vector of ground truth response
+        :param is_train_multiple: if True, sample multiple latent samples
+        :return: latent samples, (mu, log(var))s from recognition network, and dialog act embeddings
+        (additionally, DA-controlled versions of them; DA-controlled means we use manually-set dialog acts instead of
+        ground truth dialog act)
+        """
         if self.use_hcf:
             attribute_embedding = self.da_embedding(out_das)
             attribute_fc1 = self.attribute_fc1(attribute_embedding)
@@ -211,7 +241,6 @@ class CVAEModel(nn.Module):
         ctrl_recog_logvars = {}
         ctrl_recog_mulogvars = {}
 
-
         if is_train_multiple:
             latent_samples = [sample_gaussian(recog_mu, recog_logvar) for _ in range(num_samples)]
             ctrl_recog_mulogvars = {k: self.recog_mulogvar_net(v) for (k, v) in ctrl_recog_inputs.items()}
@@ -228,6 +257,12 @@ class CVAEModel(nn.Module):
                attribute_embedding, ctrl_attribute_embeddings
 
     def _sample_from_prior_network(self, cond_embedding, num_samples):
+        """
+        sample from latent distribution constructed by prior network
+        :param cond_embedding: embedding vector of (preceding utterances of dialog, meta features, floors)
+        :param num_samples: number of samples to extract
+        :return: latent samples, (mu, log(var))s from prior network
+        """
         prior_mulogvar = self.prior_mulogvar_net(cond_embedding)
         prior_mu, prior_logvar = torch.chunk(prior_mulogvar, 2, 1)
 
@@ -235,6 +270,11 @@ class CVAEModel(nn.Module):
         return latent_samples, prior_mu, prior_logvar, prior_mulogvar
 
     def _to_device_context(self, feed_dict):
+        """
+        set device (CPU or GPU) for model input vectors
+        :param feed_dict: input dict fed to forward
+        :return: device-set model input vectors
+        """
         context_lens = feed_dict['context_lens'].to(self.device).squeeze(-1)
         input_contexts = feed_dict['vec_context'].to(self.device)
         floors = feed_dict['vec_floors'].to(self.device)
@@ -246,6 +286,11 @@ class CVAEModel(nn.Module):
         return context_lens, input_contexts, floors, topics, my_profile, ot_profile
 
     def _to_device_output(self, feed_dict):
+        """
+        set device (CPU or GPU) for ground truth vectors
+        :param feed_dict: input dict fed to forward
+        :return: device-set ground truth vectors
+        """
         out_tok = feed_dict['vec_outs'].to(self.device)
         out_das = feed_dict['out_das'].to(self.device).squeeze(-1)
         output_lens = feed_dict['out_lens'].to(self.device).squeeze(-1)
@@ -254,6 +299,17 @@ class CVAEModel(nn.Module):
 
     def _get_dec_input_train(self, local_batch_size, cond_embedding, is_train_multiple, latent_samples,
                              ctrl_latent_samples, attribute_embedding, ctrl_attribute_embeddings):
+        """
+        compute decoder input for training mode
+        :param local_batch_size: batch size
+        :param cond_embedding: embedding vector of (preceding utterances of dialog, meta features, floors)
+        :param is_train_multiple: if True, use multiple latent samples
+        :param latent_samples: latent samples extracted from recognition network
+        :param ctrl_latent_samples: DA-controlled latent samples from recognition network
+        :param attribute_embedding: dialog act embeddings
+        :param ctrl_attribute_embeddings: DA-controlled
+        :return: dialog act logit from MLP_y, bow logit from MLP_b, deocder input and initial hidden state
+        """
         gen_inputs = [torch.cat([cond_embedding, latent_sample], 1) for
                       latent_sample in latent_samples]
 
@@ -274,7 +330,7 @@ class CVAEModel(nn.Module):
                 ctrl_gen_inputs = {k: torch.cat([cond_embedding, v], 1) for (k, v) in
                                    ctrl_latent_samples.items()}
                 ctrl_dec_inputs = {k: torch.cat((ctrl_gen_inputs[k], ctrl_attribute_embeddings[k]), 1) for k in
-                                       ctrl_gen_inputs.keys()}
+                                   ctrl_gen_inputs.keys()}
 
 
         else:
@@ -299,6 +355,14 @@ class CVAEModel(nn.Module):
         return da_logits, bow_logit, dec_inputs, dec_init_states, ctrl_dec_inputs, ctrl_dec_init_states
 
     def _get_dec_input_test(self, local_batch_size, cond_embedding, latent_samples):
+        """
+        compute decoder input for test mode
+        :param local_batch_size: batch size
+        :param cond_embedding: embedding vector of (preceding utterances of dialog, meta features, floors)
+        :param latent_samples: latent samples extracted from prior network
+        :return: dialog act logit from MLP_y, bow logit from MLP_b, decoder input and initial hidden state,
+        dialog act embeddings from MLP_y (predicted DA, or y') instead of ground truth DA (y)
+        """
         gen_inputs = [torch.cat([cond_embedding, latent_sample], 1) for
                       latent_sample in latent_samples]
         bow_logit = self.bow_project(gen_inputs[0])
@@ -333,6 +397,11 @@ class CVAEModel(nn.Module):
         return da_logits, bow_logit, dec_inputs, dec_init_states, pred_attribute_embeddings
 
     def feed_inference(self, feed_dict):
+        """
+        forward pass of inference mode
+        :param feed_dict: input dict fed to forward
+        :return: dict of model output
+        """
         is_test_multi_da = feed_dict.get("is_test_multi_da", True)
         num_samples = feed_dict["num_samples"]
 
@@ -345,7 +414,7 @@ class CVAEModel(nn.Module):
         max_seq_len = input_contexts.size(-1)
 
         enc_last_state = self.get_encoder_state(input_contexts, topics, floors,
-                                            False, context_lens, max_dialog_len, max_seq_len)
+                                                False, context_lens, max_dialog_len, max_seq_len)
 
         cond_list = [relation_embedded, my_profile, ot_profile, enc_last_state]
         cond_embedding = torch.cat(cond_list, 1)
@@ -409,6 +478,11 @@ class CVAEModel(nn.Module):
         return model_output
 
     def feed_train(self, feed_dict):
+        """
+        forward pass of train mode
+        :param feed_dict: input dict fed to forward
+        :return: dict of model output
+        """
         is_train_multiple = feed_dict.get("is_train_multiple", False)
         num_samples = feed_dict["num_samples"]
 
@@ -430,7 +504,7 @@ class CVAEModel(nn.Module):
         max_seq_len = input_contexts.size(-1)
 
         enc_last_state = self.get_encoder_state(input_contexts, topics, floors,
-                                            True, context_lens, max_dialog_len, max_seq_len)
+                                                True, context_lens, max_dialog_len, max_seq_len)
 
         cond_list = [relation_embedded, my_profile, ot_profile, enc_last_state]
         cond_embedding = torch.cat(cond_list, 1)
@@ -457,7 +531,6 @@ class CVAEModel(nn.Module):
 
         da_logits, bow_logit, dec_inputs, dec_init_states, \
         ctrl_dec_inputs, ctrl_dec_init_states = dec_input_pack
-
 
         dec_outss = []
         ctrl_dec_outs = {}
@@ -513,6 +586,13 @@ class CVAEModel(nn.Module):
         return model_output
 
     def forward(self, feed_dict):
+        """
+        forward pass of kgCVAE.
+        this handles pre- and post-processing of forward pass,
+        and decides which feed function (train, inference) to use.
+        :param feed_dict: input dict fed to forward
+        :return: dict of model output
+        """
         is_train = feed_dict["is_train"]
         is_train_multiple = feed_dict.get("is_train_multiple", False)
         is_test_multi_da = feed_dict.get("is_test_multi_da", True)
@@ -544,5 +624,3 @@ class CVAEModel(nn.Module):
         model_output["context_sents"] = input_context_sents
 
         return model_output
-
-

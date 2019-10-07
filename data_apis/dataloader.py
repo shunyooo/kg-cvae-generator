@@ -5,6 +5,14 @@ import numpy as np
 
 def get_cvae_collate(utt_per_case, max_utt_size):
     def cvae_collate(cvae_data_list):
+        """
+        collate_fn for CVAE dataloader.
+        collate function collates lists of samples into batches
+        cvae_collate sets maximum lengths of input contexts and ground truth response,
+        and also tensorizes preceding utterances, floors, and ground truth response
+        :param cvae_data_list: list of data instances
+        :return: collated batch
+        """
         batch_size = len(cvae_data_list)
         collate_result = default_collate(cvae_data_list)
         max_vec_context_lens = max(collate_result["context_lens"]).item()
