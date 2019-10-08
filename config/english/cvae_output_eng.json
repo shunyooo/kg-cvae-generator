@@ -1,0 +1,6 @@
+{
+  "output_dir_path": "output_eng",
+  "log_dirname": "log",
+  "model_dirname": "model",
+  "test_dirname": "test"
+}
