@@ -37,7 +37,7 @@ dataset_config_path = './config/korean/cvae_dataset_kor.json'
 trainer_config_path = './config/korean/cvae_trainer_kor.json'
 model_config_path = './config/korean/cvae_model_kor.json'
 
-model_path = "/scatter/workspace/generator/kor_cvae_new_model_3_17.pth"
+model_path = "./output_kor/model/kor_cvae_model_45.pth"
 
 
 def inference(model, data_loader, trainer_config):
@@ -135,7 +135,7 @@ def main():
     model_config = utils.load_config(model_config_path)
 
     model = CVAEModel(dataset_config, model_config, corpus)
-    model.load_state_dict(model_path)
+    model.load_state_dict(torch.load(model_path))
     model.eval()
     model.cuda()
 
