@@ -3,6 +3,7 @@ from collections import Counter
 import numpy as np
 import nltk
 import os
+import pickle
 
 # Copyright (C) 2017 Tiancheng Zhao, Carnegie Mellon University
 
@@ -99,6 +100,41 @@ class SWDADialogCorpus(CVAECorpus):
         self.rev_dialog_act_vocab = {t: idx for idx, t in enumerate(self.dialog_act_vocab)}
         print(self.dialog_act_vocab)
         print("%d dialog acts in train data" % len(self.dialog_act_vocab))
+
+    def save_vocab(self, vocab_path):
+        vocab_file_dict = {}
+        vocab_file_dict["vocab"] = self.vocab
+        vocab_file_dict["rev_vocab"] = self.rev_vocab
+
+        vocab_file_dict["topic_vocab"] = self.topic_vocab
+        vocab_file_dict["rev_topic_vocab"] = self.rev_topic_vocab
+
+        vocab_file_dict["dialog_act_vocab"] = self.dialog_act_vocab
+        vocab_file_dict["rev_dialog_act_vocab"] = self.rev_dialog_act_vocab
+
+        with open(vocab_path, 'wb') as vocab_writer:
+            pickle.dump(vocab_file_dict, vocab_writer)
+
+    def load_vocab(self, vocab_path):
+        with open(vocab_path, 'rb') as vocab_reader:
+            vocab_file_dict = pickle.load(vocab_reader)
+
+        self.vocab = vocab_file_dict["vocab"]
+        self.rev_vocab = vocab_file_dict["rev_vocab"]
+        self.unk_id = self.unk_id = self.rev_vocab["<unk>"]
+
+        print("<d> index %d" % self.rev_vocab["<d>"])
+
+        self.topic_vocab = vocab_file_dict["topic_vocab"]
+        self.rev_topic_vocab = vocab_file_dict["rev_topic_vocab"]
+        print("%d topics in train data" % len(self.topic_vocab))
+
+        self.dialog_act_vocab = vocab_file_dict["dialog_act_vocab"]
+        self.rev_dialog_act_vocab = vocab_file_dict["rev_dialog_act_vocab"]
+        print(self.dialog_act_vocab)
+        print("%d dialog acts in train data" % len(self.dialog_act_vocab))
+
+        print("Successfully loaded.")
 
     def load_word2vec(self):
         if not os.path.exists(self.word_vec_path):

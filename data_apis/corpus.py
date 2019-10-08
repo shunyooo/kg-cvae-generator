@@ -76,8 +76,13 @@ class CVAECorpus(object):
         print("Start process valid corpus...")
         self.valid_corpus = self.process(self.valid_corpus_data)
 
-        print("Start building vocab")
-        self.build_vocab(config['max_vocab_count'])
+        print("Start building / laoding vocab")
+        is_load_vocab = config.get("load_vocab", False)
+        if is_load_vocab:
+            self.load_vocab(config['vocab_path'])
+        else:
+            self.build_vocab(config['max_vocab_count'])
+            self.save_vocab(config['vocab_path'])
 
         self.load_word2vec()
         print("Done loading corpus")
@@ -86,6 +91,12 @@ class CVAECorpus(object):
         pass
 
     def build_vocab(self, max_vocab_cnt):
+        pass
+
+    def save_vocab(self, vocab_path):
+        pass
+
+    def load_vocab(self, vocab_path):
         pass
 
     def load_word2vec(self):
