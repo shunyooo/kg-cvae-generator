@@ -1,11 +1,12 @@
 {
-  "model_path": "./work/weights/eng_cvae_model_{0}.pth",
+  "model_name": "eng_cvae_model_{0}.pth",
   "epoch": 30,
   "save_epoch_step": 5,
 
 
-
   "learning_rate": 0.001,
+
+  "is_decay": false,
   "learning_decay_rate": 0.0,
   "learning_decay_step": 10,
 
