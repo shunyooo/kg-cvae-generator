@@ -1,4 +1,5 @@
 import os
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 import utils
@@ -10,8 +11,10 @@ from data_apis.dataset import CVAEDataset
 from data_apis.dataloader import get_cvae_collate
 
 from model.cvae import CVAEModel
+from model.index2sent import index2sent
 
 import tqdm
+import json
 
 corpus_config_path = './config/korean/cvae_corpus_small.json'
 dataset_config_path = './config/korean/cvae_dataset.json'
@@ -40,7 +43,21 @@ def inference(model, data_loader, trainer_config):
         model_input["num_samples"] = num_samples
 
         with torch.no_grad():
-            model_output = model.forward(model_input)
+            model_output = model.feed_inference(model_input)
+
+        vec_context = model_output["vec_context"]
+        context_lens = model_output["context_lens"]
+
+        output_sents, ctrl_output_sents, sampled_output_sents, \
+        output_logits, _, _, input_context_sents = \
+            index2sent(vec_context, context_lens, model_output, False, model.eos_id, model.vocab, model.da_vocab)
+
+        model_output["output_sents"] = output_sents
+        model_output["ctrl_output_sents"] = ctrl_output_sents
+        model_output["sampled_output_sents"] = sampled_output_sents
+        model_output["output_das"] = output_logits
+        model_output["context_sents"] = input_context_sents
+
         test_output = {"model_input": model_input, "model_output": model_output}
 
         test_outputs.append(test_output)
@@ -65,7 +82,6 @@ def inference(model, data_loader, trainer_config):
                                        output["model_input"]["my_profile"][i][j]],
                         "ot_profile": [profiles[j] for j in range(prof_len) if
                                        output["model_input"]["ot_profile"][i][j]],
-                        "gt_sentiment": output["model_output"]["real_output_das"][i],
                         "contexts": output["model_output"]["context_sents"][i],
                         "generated": output["model_output"]["output_sents"][i],
                         "samples": [output["model_output"]["sampled_output_sents"][j][i] for j in
@@ -75,7 +91,6 @@ def inference(model, data_loader, trainer_config):
                 for da in model.da_vocab:
                     out_dict[da] = output["model_output"]["ctrl_output_sents"][da][i]
 
-            out_dict["ground_truth"] = output["model_output"]["real_output_sents"][i]
             out_dict["predicted_sentiment"] = output["model_output"]["output_das"][i]
 
             final.append(out_dict)
@@ -115,11 +130,14 @@ def main():
             os.makedirs(dir_path)
 
     model = CVAEModel(dataset_config, model_config, corpus)
-    model.load_state_dict(torch.load(trainer_config["model_path"].format(trainer_config["epoch"] - trainer_config["save_epoch_step"])))
+    model.load_state_dict(
+        torch.load(trainer_config["model_path"].format(trainer_config["epoch"] - trainer_config["save_epoch_step"])))
     model.eval()
     model.cuda()
 
-    json = inference(model, test_loader, trainer_config)
+    result = inference(model, test_loader, trainer_config)
+    # with open('./test.json', 'w', encoding='utf-8') as f:
+    #     f.write(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":
