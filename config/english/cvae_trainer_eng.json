@@ -1,12 +1,17 @@
 {
+  "output_dir_path": "output_eng",
+  "log_dirname": "log",
+  "model_dirname": "model",
+  "test_dirname": "test",
+
   "model_name": "eng_cvae_model_{0}.pth",
+  "log_name": "eng_cvae_model_{0}.log",
+
   "epoch": 30,
   "save_epoch_step": 5,
 
-
   "learning_rate": 0.001,
-
-  "is_decay": false,
+  "is_learning_decay": false,
   "learning_decay_rate": 0.0,
   "learning_decay_step": 10,
 

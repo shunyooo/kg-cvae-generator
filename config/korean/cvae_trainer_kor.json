@@ -1,9 +1,17 @@
 {
-  "model_path": "./work/weights/kor_cvae_model_{0}.pth",
+  "output_dir_path": "output_kor",
+  "log_dirname": "log",
+  "model_dirname": "model",
+  "test_dirname": "test",
+
+  "model_name": "kor_cvae_model_{0}.pth",
+  "log_name": "kor_cvae_model_{0}.log",
+
   "epoch": 50,
   "save_epoch_step": 5,
 
   "learning_rate": 0.001,
+  "is_learning_decay": false,
   "learning_decay_rate": 0.0,
   "learning_decay_step": 10,
 
