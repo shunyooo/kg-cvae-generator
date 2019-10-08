@@ -24,6 +24,16 @@ from gensim.models.wrappers import FastText
 
 
 class PingpongDialogCorpus(CVAECorpus):
+    vocab = None
+    rev_vocab = None
+    unk_id = None
+
+    topic_vocab = None
+    rev_topic_vocab = None
+
+    dialog_act_vocab = None
+    rev_dialog_act_vocab = None
+
     def __init__(self, config):
         self.reserved_token_for_dialog = ['<s>', '<d>', '</s>']
         self.reserved_token_for_gen = ['<pad>', '<unk>', '<sos>', '<eos>']
@@ -64,7 +74,7 @@ class PingpongDialogCorpus(CVAECorpus):
             meta = (vec_a_meta, vec_b_meta, topic)
 
             dialog = [(bod_utt, 0, None)] + \
-                     [(utt, int(caller=="B"), senti) for caller, utt, senti in lower_utts]
+                     [(utt, int(caller == "B"), senti) for caller, utt, senti in lower_utts]
 
             new_utts.extend([bod_utt] + [utt for caller, utt, senti in lower_utts])
             new_dialog.append(dialog)
@@ -81,12 +91,13 @@ class PingpongDialogCorpus(CVAECorpus):
         raw_vocab_size = len(vocab_count)
         discard_wc = np.sum([c for t, c, in vocab_count[max_vocab_cnt:]])
         vocab_count = vocab_count[0:max_vocab_cnt]
+        oov_rate = float(discard_wc) / len(all_words)
 
         # create vocabulary list sorted by count
         print("Load corpus with train size %d, valid size %d, "
               "test size %d raw vocab size %d vocab size %d at cut_off %d OOV rate %f"
               % (len(self.train_corpus), len(self.valid_corpus), len(self.test_corpus),
-                 raw_vocab_size, len(vocab_count), vocab_count[-1][1], float(discard_wc) / len(all_words)))
+                 raw_vocab_size, len(vocab_count), vocab_count[-1][1], oov_rate))
 
         self.vocab = self.reserved_token_for_gen + [t for t, cnt in vocab_count]
         self.rev_vocab = {t: idx for idx, t in enumerate(self.vocab)}
@@ -106,7 +117,9 @@ class PingpongDialogCorpus(CVAECorpus):
         for dialog in self.train_corpus[self.dialog_id]:
             all_sentiments.extend([senti for caller, utt, senti in dialog if senti is not None])
         # self.dialog_act_vocab = [t for t, cnt in Counter(all_sentiments).most_common()]
-        self.dialog_act_vocab = ["StrongNeg", "WeakNeg", "Neutral", "WeakPos", "StrongPos"] # for da control in test
+
+        # control dialog act vocab index for testing.
+        self.dialog_act_vocab = ["StrongNeg", "WeakNeg", "Neutral", "WeakPos", "StrongPos"]
         self.rev_dialog_act_vocab = {t: idx for idx, t in enumerate(self.dialog_act_vocab)}
         print(self.dialog_act_vocab)
         print("%d dialog acts in train data" % len(self.dialog_act_vocab))

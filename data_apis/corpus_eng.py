@@ -3,7 +3,6 @@ from collections import Counter
 import numpy as np
 import nltk
 import os
-import codecs
 
 # Copyright (C) 2017 Tiancheng Zhao, Carnegie Mellon University
 
@@ -12,6 +11,16 @@ class SWDADialogCorpus(CVAECorpus):
     dialog_act_id = 0
     sentiment_id = 1
     liwc_id = 2
+
+    vocab = None
+    rev_vocab = None
+    unk_id = None
+
+    topic_vocab = None
+    rev_topic_vocab = None
+
+    dialog_act_vocab = None
+    rev_dialog_act_vocab = None
 
     def __init__(self, config):
         self.sil_utt = ["<s>", "<sil>", "</s>"]
@@ -40,7 +49,8 @@ class SWDADialogCorpus(CVAECorpus):
 
             # for joint model we mode two side of speakers together. if A then its 0 other wise 1
             meta = (vec_a_meta, vec_b_meta, l["topic"])
-            dialog = [(bod_utt, 0, None)] + [(utt, int(caller=="B"), feat) for caller, utt, feat in lower_utts]
+            dialog = [(bod_utt, 0, None)] + \
+                     [(utt, int(caller == "B"), feat) for caller, utt, feat in lower_utts]
 
             new_utts.extend([bod_utt] + [utt for caller, utt, feat in lower_utts])
             new_dialog.append(dialog)
@@ -57,12 +67,13 @@ class SWDADialogCorpus(CVAECorpus):
         raw_vocab_size = len(vocab_count)
         discard_wc = np.sum([c for t, c, in vocab_count[max_vocab_cnt:]])
         vocab_count = vocab_count[0:max_vocab_cnt]
+        oov_rate = float(discard_wc) / len(all_words)
 
         # create vocabulary list sorted by count
         print("Load corpus with train size %d, valid size %d, "
               "test size %d raw vocab size %d vocab size %d at cut_off %d OOV rate %f"
               % (len(self.train_corpus), len(self.valid_corpus), len(self.test_corpus),
-                 raw_vocab_size, len(vocab_count), vocab_count[-1][1], float(discard_wc) / len(all_words)))
+                 raw_vocab_size, len(vocab_count), vocab_count[-1][1], oov_rate))
 
         self.vocab = ["<pad>", "<unk>"] + [t for t, cnt in vocab_count]
         self.rev_vocab = {t: idx for idx, t in enumerate(self.vocab)}
@@ -81,7 +92,9 @@ class SWDADialogCorpus(CVAECorpus):
         # get dialog act labels
         all_dialog_acts = []
         for dialog in self.train_corpus[self.dialog_id]:
-            all_dialog_acts.extend([feat[self.dialog_act_id] for caller, utt, feat in dialog if feat is not None])
+            dialog_act_list = [feat[self.dialog_act_id] for
+                               caller, utt, feat in dialog if feat is not None]
+            all_dialog_acts.extend(dialog_act_list)
         self.dialog_act_vocab = [t for t, cnt in Counter(all_dialog_acts).most_common()]
         self.rev_dialog_act_vocab = {t: idx for idx, t in enumerate(self.dialog_act_vocab)}
         print(self.dialog_act_vocab)
