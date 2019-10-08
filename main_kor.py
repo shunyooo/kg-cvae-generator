@@ -2,7 +2,7 @@ import os
 import utils
 from torch.utils.data import DataLoader
 
-from data_apis.corpus_eng import SWDADialogCorpus
+from data_apis.corpus_kor import PingpongDialogCorpus
 from data_apis.dataset import CVAEDataset
 from data_apis.dataloader import get_cvae_collate
 
@@ -10,20 +10,28 @@ from trainer.cvae.trainer import CVAETrainer
 
 from model.cvae import CVAEModel
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-corpus_config_path = './config/english/cvae_corpus_eng.json'
-dataset_config_path = './config/english/cvae_dataset_eng.json'
-trainer_config_path = './config/english/cvae_trainer_eng.json'
-model_config_path = './config/english/cvae_model_eng.json'
+corpus_config_path = './config/korean/cvae_corpus_kor.json'
+dataset_config_path = './config/korean/cvae_dataset_kor.json'
+trainer_config_path = './config/korean/cvae_trainer_kor.json'
+model_config_path = './config/korean/cvae_model_kor.json'
 
-language = "eng"
+
+overall = {
+  "work_dir": "./work",
+  "log_dir": "log",
+  "model_dir": "weights",
+  "test_dir": "test"
+}
+
+language = "kor"
 
 
 def main():
     # Generate Corpus
     corpus_config = utils.load_config(corpus_config_path)
-    corpus = SWDADialogCorpus(corpus_config)
+    corpus = PingpongDialogCorpus(corpus_config)
 
     dial_corpus = corpus.get_dialog_corpus()
     meta_corpus = corpus.get_meta_corpus()
@@ -44,9 +52,9 @@ def main():
 
     cvae_collate = get_cvae_collate(utt_per_case, max_utt_size)
 
-    train_loader = DataLoader(train_set, batch_size=100, shuffle=True, collate_fn=cvae_collate)
-    valid_loader = DataLoader(valid_set, batch_size=60, shuffle=False, collate_fn=cvae_collate)
-    test_loader = DataLoader(test_set, batch_size=60, shuffle=False, collate_fn=cvae_collate)
+    train_loader = DataLoader(train_set, batch_size=10, shuffle=True, collate_fn=cvae_collate)
+    valid_loader = DataLoader(valid_set, batch_size=10, shuffle=False, collate_fn=cvae_collate)
+    test_loader = DataLoader(test_set, batch_size=10, shuffle=False, collate_fn=cvae_collate)
 
     trainer_config = utils.load_config(trainer_config_path)
     model_config = utils.load_config(model_config_path)
