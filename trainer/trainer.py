@@ -33,11 +33,27 @@ class Trainer(ABC):
 
         self.optimizer: Optimizer = self._set_optimizer(model)
         self.scheduler = self._set_scheduler()
+        self.is_learning_decay: bool = config["is_learning_decay"]
         self.is_valid_true: bool = config["is_valid_train"]
         self.is_test_multi_da = config["is_test_multi_da"]
 
         self.save_epoch_step = config["save_epoch_step"]
-        self.model_path = config["model_path"]
+
+        output_dir_path = config["output_dir_path"]
+        log_dirname = config["log_dirname"]
+        model_dirname = config["model_dirname"]
+        test_dirname = config["test_dirname"]
+
+        self.log_dir_path = os.path.join(output_dir_path, log_dirname)
+        self.model_dir_path = os.path.join(output_dir_path, model_dirname)
+        self.test_dir_path = os.path.join(output_dir_path, test_dirname)
+        dir_paths = [output_dir_path, self.log_dir_path, self.model_dir_path, self.test_dir_path]
+        for dir_path in dir_paths:
+            if not os.path.exists(dir_path):
+                os.makedirs(dir_path)
+
+        self.model_path = os.path.join(self.model_dir_path, config["model_name"])
+        self.log_path = os.path.join(self.log_dir_path, config["log_name"])
 
     def experiment(
         self,
@@ -143,8 +159,10 @@ class Trainer(ABC):
             step_output = step_function(model_input, current_step_num)
             self.report_per_step(step_output, step_id, mode, epoch, is_train=is_train)
             step_outputs.append(step_output)
-        if is_train:
+
+        if is_train and self.is_learning_decay:
             self.scheduler.step()
+
         return step_outputs
 
     def valid(

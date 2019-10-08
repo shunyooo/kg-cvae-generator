@@ -17,8 +17,8 @@ class CVAELoss(nn.Module):
         bow_logit = model_output["bow_logit"]
         dec_out = model_output["dec_out"]
 
-        return self.calculate_loss(dec_out, bow_logit, da_logit, out_token, out_das,
-                                       model_output, is_train, is_valid, current_step)
+        return self.calculate_loss(dec_out, bow_logit, da_logit, out_token,
+                                   out_das, model_output, is_train, is_valid, current_step)
 
     def calculate_seq_loss(self, dec_out, bow_logit, da_logit, out_token, out_das):
         labels = out_token.clone()
@@ -90,8 +90,8 @@ class CVAELoss(nn.Module):
 
         return {"avg_kl_loss": avg_kld, "kl_weights": kl_weights}
 
-    def calculate_loss(self, dec_out, bow_logit, da_logit, out_token, out_das,
-                                       model_output, is_train, is_valid, current_step):
+    def calculate_loss(self, dec_out, bow_logit, da_logit,
+                       out_token, out_das, model_output, is_train, is_valid, current_step):
 
         losses = {}
         seq_loss = self.calculate_seq_loss(dec_out, bow_logit, da_logit, out_token, out_das)

@@ -1,15 +1,13 @@
-from .. import trainer
-from . import criterion
+import trainer.trainer as trainer
+import trainer.cvae.criterion as criterion
 
-from abc import ABC, abstractmethod
-from typing import Callable, Dict, Iterable, List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import time
 import torch
 import torch.nn as nn
 from torch.optim.optimizer import Optimizer
 from torch.optim.lr_scheduler import StepLR
-from torch.utils.data import DataLoader
 
 
 class CVAETrainer(trainer.Trainer):
@@ -79,45 +77,67 @@ class CVAETrainer(trainer.Trainer):
         :param elapsed_time: elapsed time
         :param is_train: is it currently train status
         """
+        def print_with_logging(file_printer, log_mesg):
+            file_printer.write(log_mesg + "\n")
+            print(log_mesg)
+
+        log_file_name = self.log_path.format(epoch)
+        log_writer = open(log_file_name, "w")
+
         losses = [metrics[i]["loss"] for i in range(len(metrics))]
         loss = {}
         for key in losses[0].keys():
-            loss[key] = 0
+            loss[key] = 0.0
             for l in losses:
-                loss[key] += l[key]
+                if type(l[key]) != float:
+                    loss[key] += l[key].item()
+                else:
+                    loss[key] += l[key]
             loss[key] /= len(losses)
 
         metric = []
         for key, value in loss.items():
-            if type(value) != float:
-                the_value = value.item()
-            else:
-                the_value = value
-            metric.append("{0}: {1:.3f}". format(key, the_value))
+            metric.append("{0}: {1:.3f}". format(key, value))
         metric_str = ", ".join(metric)
 
         elapsed_time_str = mode_name + " elapsed Time for Epoch {0} %H:%M:%S".format(epoch)
-        print(time.strftime(elapsed_time_str, time.gmtime(elapsed_time)))
+        elapsed_time_str = str(time.strftime(elapsed_time_str, time.gmtime(elapsed_time)))
+        print_with_logging(log_writer, elapsed_time_str)
 
-        print("Metric in {0} set for Epoch #{1}: {2}".format(mode_name, epoch, metric_str))
+        metric_title = "Metric in {0} set for Epoch #{1}: {2}".format(mode_name, epoch, metric_str)
+        print_with_logging(log_writer, metric_title)
 
-        print("========== {0} Examples for Epoch #{1} ==========".format(mode_name, epoch))
+        epoch_ex_str = "========== {0} Examples for Epoch #{1} ==========".format(mode_name, epoch)
+        print_with_logging(log_writer, epoch_ex_str)
         for i in range(self.num_samples):
             context_sents = metrics[0]["model_output"]["context_sents"][i]
             for turn_id, turn in enumerate(context_sents):
-                print("Context Turn #{0}: {1}".format(turn_id, turn))
-            print("Generated:", metrics[0]["model_output"]["output_sents"][i])
+                context_turn_str = "Context Turn #{0}: {1}".format(turn_id, turn)
+                print_with_logging(log_writer, context_turn_str)
+
+            generated_sent = metrics[0]["model_output"]["output_sents"][i]
+            generated_sent_str = "Generated (Sample #1): {0}".format(generated_sent)
+            print_with_logging(log_writer, generated_sent_str)
 
             if not is_train:
                 for j in range(self.num_samples - 1):
-                    print("Sample", j + 2, ":", metrics[0]["model_output"]["sampled_output_sents"][j][i])
+                    sampled_sent = metrics[0]["model_output"]["sampled_output_sents"][j][i]
+                    sampled_sent_str = "Sample #{0}: {1}".format(j+2, sampled_sent)
+                    print_with_logging(log_writer, sampled_sent_str)
                 if self.is_test_multi_da:
                     for da in self.da_types:
-                        print(da, ":", metrics[0]["model_output"]["ctrl_output_sents"][da][i])
+                        multi_da_result = metrics[0]["model_output"]["ctrl_output_sents"][da][i]
+                        multi_da_str = "{0} : {1}".format(da, multi_da_result)
+                        print_with_logging(log_writer, multi_da_str)
 
-            print("Real:", metrics[0]["model_output"]["real_output_sents"][i])
-            print("Predicted da", metrics[0]["model_output"]["output_das"][i])
-            print("Real da", metrics[0]["model_output"]["real_output_das"][i])
+            real_str = metrics[0]["model_output"]["real_output_sents"][i]
+            predicted_da = metrics[0]["model_output"]["output_das"][i]
+            real_da = metrics[0]["model_output"]["real_output_das"][i]
+
+            print_with_logging(log_writer, "Real Response: {0}".format(real_str))
+            print_with_logging(log_writer, "Predicted DA: {0}".format(predicted_da))
+            print_with_logging(log_writer, "Real DA: {0}".format(real_da))
+        log_writer.close()
 
     def report_per_step(
         self,
@@ -136,11 +156,6 @@ class CVAETrainer(trainer.Trainer):
         :param is_train: is it currently train status
         """
 
-        """
-        metrics = ["{0}: {1}". format(key, value) for key, value in metric.items()]
-        metric_str = ",".join(metrics)
-        print("Metric for Step #{0}: {1}".format(step, metric_str))
-        """
     def _set_optimizer(self, model) -> Optimizer:
         """
         setting which optimizer are gonna be used
