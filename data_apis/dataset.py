@@ -1,3 +1,20 @@
+"""
+Copyright 2019 Pingpong AI Research, ScatterLab
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+
 import torch
 from torch.utils.data import Dataset
 import numpy as np
@@ -7,9 +24,9 @@ class CVAEDataset(Dataset):
     @staticmethod
     def slice_and_pad(sent, max_len, pad_token_idx, do_pad=True):
         """
-        make sentence length the same as pre-defined maximum length
-        if sentence length exceeds maximum length, remove tokens after max_len
-        otherwise, add pad tokens until the sentence length reaches max_len
+        make sentence length the same as pre-defined maximum length.
+        if sentence length exceeds maximum length, remove tokens after max_len.
+        otherwise, add pad tokens until the sentence length reaches max_len.
         :param sent: sentence to operate
         :param max_len: pre-defined maximum length of a sentence
         :param pad_token_idx: index of <PAD> token in vocab
@@ -25,7 +42,7 @@ class CVAEDataset(Dataset):
 
     def __init__(self, name, data, meta_data, language, config):
         """
-        class for dataset of kgCVAE
+        class for dataset of kgCVAE.
         :param name: name of dataset
         :param data: list of dialog instances
         :param meta_data: list of meta features
@@ -71,7 +88,8 @@ class CVAEDataset(Dataset):
 
                 data_item["topics"] = torch.LongTensor([topic])
 
-                if out_floor == 1: #B
+                # if current turn is for "B"
+                if out_floor == 1:
                     data_item["my_profile"] = torch.FloatTensor(vec_b_meta)
                     data_item["ot_profile"] = torch.FloatTensor(vec_a_meta)
                 else:

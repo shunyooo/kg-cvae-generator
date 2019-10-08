@@ -1,18 +1,34 @@
+"""
+Copyright 2019 Pingpong AI Research, ScatterLab
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+
 import torch
-import torch.nn as nn
-import torch.nn.functional as fnn
 
 
 def index2sent(input_contexts, context_lens, model_output, feed_real, eos_id, vocab, da_vocab):
     """
+    Interpret model_output to human readable sentences.
 
-    :param input_contexts:
-    :param context_lens:
-    :param model_output:
+    :param input_contexts: input context (from 0 to previous turn) vector.
+    :param context_lens: lengths of each input context sentence.
+    :param model_output: target output to be generated.
     :param feed_real: if True, the function will also print out real sentences.
-    :param eos_id:
-    :param vocab:
-    :param da_vocab:
+    :param eos_id: end of sequence (<eos>) token index.
+    :param vocab: vocab list.
+    :param da_vocab: dialog act word list.
     :return:
     """
     dec_out = model_output["dec_out"].cpu()

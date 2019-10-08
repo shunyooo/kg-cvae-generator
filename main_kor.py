@@ -1,3 +1,20 @@
+"""
+Copyright 2019 Pingpong AI Research, ScatterLab
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+
 import os
 import utils
 from torch.utils.data import DataLoader
@@ -52,9 +69,9 @@ def main():
 
     cvae_collate = get_cvae_collate(utt_per_case, max_utt_size)
 
-    train_loader = DataLoader(train_set, batch_size=10, shuffle=True, collate_fn=cvae_collate)
-    valid_loader = DataLoader(valid_set, batch_size=10, shuffle=False, collate_fn=cvae_collate)
-    test_loader = DataLoader(test_set, batch_size=10, shuffle=False, collate_fn=cvae_collate)
+    train_loader = DataLoader(train_set, batch_size=100, shuffle=True, collate_fn=cvae_collate)
+    valid_loader = DataLoader(valid_set, batch_size=100, shuffle=False, collate_fn=cvae_collate)
+    test_loader = DataLoader(test_set, batch_size=100, shuffle=False, collate_fn=cvae_collate)
 
     trainer_config = utils.load_config(trainer_config_path)
     model_config = utils.load_config(model_config_path)

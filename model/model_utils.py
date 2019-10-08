@@ -1,19 +1,18 @@
+#    Copyright (C) 2018 Ruotian Luo, Toyota Technological Institute at Chicago
+
 import numpy as np
-from nltk.translate.bleu_score import sentence_bleu
-from nltk.translate.bleu_score import SmoothingFunction
 
 import torch.nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-import json
-import pickle
 import torch
 import torch.nn as nn
 
 
 def norm_log_liklihood(x, mu, logvar):
-    return -0.5 * torch.sum(logvar + np.log(2 * np.pi) + torch.div(torch.pow((x - mu), 2), torch.exp(logvar)), 1)
+    return -0.5 * torch.sum(logvar + np.log(2 * np.pi) +
+                            torch.div(torch.pow((x - mu), 2), torch.exp(logvar)), 1)
 
 
 def sample_gaussian(mu, logvar):

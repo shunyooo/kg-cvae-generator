@@ -1,4 +1,4 @@
-#    Copyright (C) 2017 Tiancheng Zhao, Carnegie Mellon University
+#    Copyright (C) 2018 Ruotian Luo, Toyota Technological Institute at Chicago
 
 
 import torch
