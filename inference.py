@@ -1,12 +1,10 @@
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-
 import utils
 import torch
 from torch.utils.data import DataLoader
 
-from data_apis.corpus import PingpongDialogCorpus
+from data_apis.corpus_kor import PingpongDialogCorpus
 from data_apis.dataset import CVAEDataset
 from data_apis.dataloader import get_cvae_collate
 
@@ -14,19 +12,15 @@ from model.cvae import CVAEModel
 from model.index2sent import index2sent
 
 import tqdm
-import json
 
-corpus_config_path = './config/korean/cvae_corpus_small.json'
-dataset_config_path = './config/korean/cvae_dataset.json'
-trainer_config_path = './config/korean/cvae_trainer_small.json'
-model_config_path = './config/korean/cvae_model.json'
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-overall = {
-    "work_dir": "./work",
-    "log_dir": "log",
-    "model_dir": "weights",
-    "test_dir": "test"
-}
+corpus_config_path = './config/korean/cvae_corpus_kor.json'
+dataset_config_path = './config/korean/cvae_dataset_kor.json'
+trainer_config_path = './config/korean/cvae_trainer_kor.json'
+model_config_path = './config/korean/cvae_model_kor.json'
+
+model_path = "/scatter/workspace/generator/kor_cvae_new_model_3_17.pth"
 
 
 def inference(model, data_loader, trainer_config):
@@ -100,6 +94,8 @@ def inference(model, data_loader, trainer_config):
 
 def main():
     corpus_config = utils.load_config(corpus_config_path)
+    corpus_config["load_vocab"] = True
+
     corpus = PingpongDialogCorpus(corpus_config)
 
     dial_corpus = corpus.get_dialog_corpus()
@@ -121,23 +117,13 @@ def main():
     trainer_config = utils.load_config(trainer_config_path)
     model_config = utils.load_config(model_config_path)
 
-    log_dir_path = os.path.join(overall["work_dir"], overall["log_dir"])
-    model_dir_path = os.path.join(overall["work_dir"], overall["model_dir"])
-    test_dir_path = os.path.join(overall["work_dir"], overall["test_dir"])
-    dir_paths = [log_dir_path, model_dir_path, test_dir_path]
-    for dir_path in dir_paths:
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
-
     model = CVAEModel(dataset_config, model_config, corpus)
-    model.load_state_dict(
-        torch.load(trainer_config["model_path"].format(trainer_config["epoch"] - trainer_config["save_epoch_step"])))
+    model.load_state_dict(model_path)
     model.eval()
     model.cuda()
 
     result = inference(model, test_loader, trainer_config)
-    # with open('./test.json', 'w', encoding='utf-8') as f:
-    #     f.write(json.dumps(result, ensure_ascii=False))
+    print(result)
 
 
 if __name__ == "__main__":
