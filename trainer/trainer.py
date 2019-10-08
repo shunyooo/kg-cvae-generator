@@ -90,7 +90,7 @@ class Trainer(ABC):
                 self.model.load_state_dict(torch.load(model_path))
                 device = torch.device("cuda")
                 self.model.to(device)
-                exp_epoch_start_point = epoch_start_point
+                exp_epoch_start_point = epoch_start_point + 1
             else:
                 exp_epoch_start_point = 0
 
