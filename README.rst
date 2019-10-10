@@ -46,10 +46,12 @@ Getting Started
 
     python inference.py 
 
-훈련 시킬 때, 기훈련 임베딩을 활용할 수 있습니다.
+훈련 시킬 때, 기훈련 임베딩을 활용할 수 있습니다. 영어의 경우 Glove txt파일, 한글의 경우 Fasttext bin파일 형식을 지원합니다. 
+기훈련 임베딩을 사용하시기 위해서는 corpus config 파일의 word2vec_path 변수에 기훈련 임베딩 파일 경로를 명시해주십시오. 
+기훈련 임베딩의 차원은 입력 차원과 일치해야합니다.
 
 * 영어의 경우 `Stanford 임베딩 <https://nlp.stanford.edu/projects/glove/>`_ 에서 Twitter를 활용한 200차원 임베딩을 기본으로 사용하고 있습니다.
-* 한국어의 경우, 나무위키로 학습시킨 300차원 임베딩을 기본으로 사용하고 있습니다. 
+* 한국어의 경우, 나무위키로 학습시킨 300차원 임베딩을 기본으로 사용하였습니다.
 
 Dataset
 ---------------
@@ -79,6 +81,6 @@ Authors
 
 License
 -------
-원 저자들이 작성한 코드 기반으로 부가적으로 작성된 모듈 (decoder_fn_lib.py, corpus_eng.py 등)을 제외한 나머지 소스에 대해서 다음 아파치 라이선스 2.0을 준수하여 주십시오. 
+본 코드에서 원 저자들이 작성한 코드 기반으로 부가적으로 작성된 모듈 (decoder_fn_lib.py, corpus_eng.py 등)을 제외한 나머지 소스에 대해서는 다음 아파치 라이선스 2.0을 따르고 있습니다.
 
 Copyright 2019 Pingpong AI Research, ScatterLab `Apache License 2.0 <https://github.com/pingpong-ai/chatspace/blob/master/LICENSE>`_
