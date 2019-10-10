@@ -37,7 +37,7 @@ dataset_config_path = './config/korean/cvae_dataset_kor.json'
 trainer_config_path = './config/korean/cvae_trainer_kor.json'
 model_config_path = './config/korean/cvae_model_kor.json'
 
-model_path = "./output_kor/model/kor_cvae_model_45.pth"
+model_path = "your_model_path"
 
 
 def inference(model, data_loader, trainer_config):
