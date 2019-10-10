@@ -78,8 +78,10 @@ class CVAEModel(nn.Module):
         self.da_embedding = nn.Embedding(self.da_vocab_size, self.da_embed_size)
 
         self.word_embedding = nn.Embedding(self.vocab_size, self.embed_size, padding_idx=self.pad_id)
-        self.word_embedding.from_pretrained(torch.FloatTensor(vocab_class.word2vec), padding_idx=self.pad_id)
 
+        if vocab_class.word2vec is not None:
+            self.word_embedding.from_pretrained(torch.FloatTensor(vocab_class.word2vec),
+                                                padding_idx=self.pad_id)
         # only use bi-rnn cell
         if self.sent_type == 'bi-rnn':
             self.bi_sent_cell = get_rnncell('gru', self.embed_size, self.sent_cell_size,
