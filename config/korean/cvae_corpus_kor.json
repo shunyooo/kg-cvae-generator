@@ -1,0 +1,13 @@
+{
+  "data_dir": "data/korean",
+  "train_filename": "example_kor.json",
+  "test_filename": "example_kor.json",
+  "valid_filename": "example_kor.json",
+
+  "vocab_path": "kor.vocab",
+  "load_vocab": false,
+
+  "word2vec_path": "namuwiki_fasttext_300_ws_05_mc_20_neg_10_ns.bin",
+  "embed_size": 300,
+  "max_vocab_count": 15000
+}

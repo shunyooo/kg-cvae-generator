@@ -1,0 +1,32 @@
+{
+  "output_dir_path": "output_kor",
+  "log_dirname": "log",
+  "model_dirname": "model",
+  "test_dirname": "test",
+
+  "model_name": "kor_cvae_model_{0}.pth",
+  "log_name": "kor_cvae_model_{0}.log",
+
+  "epoch": 50,
+  "save_epoch_step": 5,
+
+  "learning_rate": 0.001,
+  "is_learning_decay": false,
+  "learning_decay_rate": 0.0,
+  "learning_decay_step": 10,
+
+  "train_output": ["output_sents", "output_das", "real_output_sents", "real_output_das","context_sents"],
+  "valid_output": ["output_sents", "ctrl_output_sents", "sampled_output_sents", "output_das", "real_output_sents", "real_output_das","context_sents"],
+  "test_output": ["output_sents", "ctrl_output_sents", "sampled_output_sents", "output_das", "real_output_sents", "real_output_das","context_sents"],
+
+  "is_valid_train": true,
+  "is_test_multi_da": true,
+  "num_samples": 5,
+  "log_freq": 100,
+  "device": "cuda",
+
+  "loss": {
+    "use_hcf": true,
+    "full_kl_step" : 15000
+  }
+}

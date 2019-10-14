@@ -1,0 +1,13 @@
+{
+  "data_dir": "data/english/",
+  "train_filename": "train.jsonl",
+  "test_filename": "test.jsonl",
+  "valid_filename": "valid.jsonl",
+
+  "vocab_path": "eng.vocab",
+  "load_vocab": false,
+
+  "word2vec_path": "glove.twitter.27B.200d.txt",
+  "embed_size": 200,
+  "max_vocab_count": 10000
+}
