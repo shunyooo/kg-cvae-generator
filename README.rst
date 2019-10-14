@@ -54,7 +54,7 @@ Getting Started
 Dataset
 ---------------
 * 영어의 경우, 원 저자 논문의 Switchboard 말뭉치 (JSONL 포맷)를 참조하였습니다.
-* 한국어의 경우, `연애의 과학 <https://scienceoflove.co.kr/>`_ 에서 추출된 대화 데이터를 활용하였습니다.
+* 한국어의 경우, `연애의 과학 <https://scienceoflove.co.kr/>`_ 에서 추출된 대화 데이터를 활용하였습니다. example_kor.json 파일을 참조해주십시오.
 
 Requirements
 ------------
