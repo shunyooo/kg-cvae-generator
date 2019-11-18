@@ -2,7 +2,7 @@
 
 kg-CVAEの実装。Python3 / torch 1.1.0
 
-
+キーワードベースへの変更
 
 ## Introduction
 
