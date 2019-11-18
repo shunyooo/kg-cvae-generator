@@ -18,26 +18,31 @@ def inference_loop(cell, output_fn, embeddings,
         the feature dimension of the output from the decoder. This is a
         greedy-search approach. (Bahdanau et al., 2014) & (Sutskever et al., 2014)
         use beam-search instead.
+        推論中に使用されるデコーダー関数。
+        このデコーダー関数では、デコーダーからの出力の特徴次元にargmaxを適用することにより、
+        次のデコーダーへの入力を計算します。つまりこれはGreedyな探索です。
+        （Bahdanau et al。、2014）＆（Sutskever et al。、2014）では代わりにビームサーチを使用しています。
+
 
       Args:
-        output_fn: An output function to project your `cell_output` onto class
-        logits.
+        output_fn: cellの出力として写像する出力関数. vocab_sizeになる. An output function to project your `cell_output` onto class logits.
 
         If `None` is supplied it will act as an identity function.
 
-        encoder_state: The encoded state to initialize the decoder`.
-        embeddings: The embeddings Module used for the decoder sized
-        `[num_decoder_symbols, embedding_size]`.
-        start_of_sequence_id: The start of sequence ID in the decoder embeddings.
-        end_of_sequence_id: The end of sequence ID in the decoder embeddings.
-        maximum_length: The maximum allowed of time steps to decode.
-        num_decoder_symbols: The number of classes to decode at each time step.
-        context_vector: an extra vector that should be appended to the input embedding
+        encoder_state: デコーダを初期化するエンコード状態. The encoded state to initialize the decoder`.
+        embeddings: デコーダ用の埋め込みモジュール. The embeddings Module used for the decoder sized `[num_decoder_symbols, embedding_size]`.
+        start_of_sequence_id: 文頭トークン. The start of sequence ID in the decoder embeddings.
+        end_of_sequence_id: EOSトークン. The end of sequence ID in the decoder embeddings.
+        maximum_length: 最大デコードステップ数. The maximum allowed of time steps to decode.
+        num_decoder_symbols: 毎ステップで何種類のクラスをデコードするか. The number of classes to decode at each time step.
+        context_vector: 追加のベクトル. 多分文脈ベクトルとかに相当. an extra vector that should be appended to the input embedding
 
-              done: A boolean vector to indicate which sentences has reached a
-              `end_of_sequence_id`. This is used for early stopping by the
-              `dynamic_rnn_decoder`. When `time>=maximum_length` a boolean vector with
-              all elements as `true` is returned.
+              done: どの文がEOSに到達したかを表すBoolベクトル. `dynamic_rnn_decoder` でのearly stopに使用される.
+                    time >= maximun_length の場合、全ての要素が True のBoolベクトルが返される.
+                    A boolean vector to indicate which sentences has reached a
+                    `end_of_sequence_id`. This is used for early stopping by the
+                    `dynamic_rnn_decoder`. When `time>=maximum_length` a boolean vector with
+                    all elements as `true` is returned.
 
               context state: `context_state`, this decoder function does not
               modify the given context state. The context state could be modified when
