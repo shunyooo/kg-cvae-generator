@@ -53,7 +53,7 @@ def inference_loop(cell, output_fn, embeddings,
             # invariant that this is time == 0
             next_input_id = encoder_state.new_full((batch_size,), start_of_sequence_id, dtype=torch.long)
             # done: indicate which sentences reaches eos. used for early stopping
-            done = encoder_state.new_zeros(batch_size, dtype=torch.uint8)
+            done = encoder_state.new_zeros(batch_size, dtype=torch.bool)
             cell_state = encoder_state
         else:
             cell_output = output_fn(cell_output)
