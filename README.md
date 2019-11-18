@@ -12,6 +12,8 @@ kg-CVAEの実装。Python3 / torch 1.1.0
 
 BASE : [pingpong-ai/kg-cvae-generator](https://github.com/pingpong-ai/kg-cvae-generator)：**Python3/PyTorch 1.1.0**
 
+![image-20191118120136214](https://tva1.sinaimg.cn/large/006y8mN6gy1g920fhlst7j323a0kin4w.jpg)
+
 
 
 ## Getting Started
