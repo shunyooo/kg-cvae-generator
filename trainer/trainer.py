@@ -105,8 +105,9 @@ class Trainer(ABC):
             # Check if parameter available
             if os.path.exists(model_path):
                 self.model.load_state_dict(torch.load(model_path))
-                device = torch.device("cuda")
-                self.model.to(device)
+                if torch.cuda.is_available():
+                    device = torch.device("cuda")
+                    self.model.to(device)
                 exp_epoch_start_point = epoch_start_point + 1
             else:
                 exp_epoch_start_point = 0

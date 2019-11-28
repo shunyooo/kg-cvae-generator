@@ -137,7 +137,9 @@ def main():
     model = CVAEModel(dataset_config, model_config, corpus)
     model.load_state_dict(torch.load(model_path))
     model.eval()
-    model.cuda()
+
+    if torch.cuda.is_available():
+        model.cuda()
 
     result = inference(model, test_loader, trainer_config)
     print(result)

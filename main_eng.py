@@ -17,6 +17,7 @@ limitations under the License.
 
 import os
 import utils
+import torch
 from torch.utils.data import DataLoader
 
 from data_apis.corpus_eng import SWDADialogCorpus
@@ -69,7 +70,8 @@ def main():
     model_config = utils.load_config(model_config_path)
 
     target_model = CVAEModel(dataset_config, model_config, corpus)
-    target_model.cuda()
+    if torch.cuda.is_available():
+        target_model.cuda()
     cvae_trainer = CVAETrainer(trainer_config, target_model)
 
     output_reports = cvae_trainer.experiment(train_loader, valid_loader, test_loader)
