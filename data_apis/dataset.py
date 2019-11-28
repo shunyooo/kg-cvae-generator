@@ -43,7 +43,7 @@ class CVAEDataset(Dataset):
     def __init__(self, name, data, meta_data, language, config):
         """
         class for dataset of kgCVAE.
-        :param name: name of dataset
+        :param name: name of dataset (Train/Valid/Test)
         :param data: list of dialog instances
         :param meta_data: list of meta features
         :param language: 'eng' for English dataset, 'kor' for Korean dataset
@@ -65,8 +65,9 @@ class CVAEDataset(Dataset):
         self.data = []
         self.meta_data = []
 
+        # 対話ごとのloop
         for data_point_idx, data_point in enumerate(data):
-            data_lens = len(data_point)
+            data_lens = len(data_point) # 対話の長さ
             meta_row = meta_data[data_point_idx]
             vec_a_meta, vec_b_meta, topic = meta_row
             if self.is_inference:
@@ -78,6 +79,19 @@ class CVAEDataset(Dataset):
 
             for end_idx_offset in range(end_idx_offset_start, end_idx_offset_end):
                 data_item = {}
+                # data_item を self.data に貯めていく
+                # {
+                #   topic: topic_id
+                #   my_profile: B_profile as system profile
+                #   ot_profile: A_profile as user profile
+                #   context_lens: 切り取った対話の長さ
+                #   context_utts: 対話のtokenデータ: [[2, 143, 3, 0,..], ..]
+                #   floors: 各応答の話者データ: [0, 1, 0, 0, ..]
+                #   out_utts: out(モデルのラベルとなる応答文)のtokenデータ
+                #   out_lens: outの文長
+                #   out_floor: outの話者データ
+                #   out_das: outの対話行動
+                # }
 
                 start_idx = max(0, end_idx_offset - self.utt_per_case)
                 end_idx = end_idx_offset
@@ -99,8 +113,8 @@ class CVAEDataset(Dataset):
                 data_item["context_lens"] = torch.LongTensor([len(cut_row) - 1])
                 context_utts = np.zeros((self.utt_per_case, self.max_utt_size))
 
-                padded_utt_pairs = [self.slice_and_pad(utt, self.max_utt_size,
-                                                       self.pad_token_idx)
+                # 文の長さを合わせる
+                padded_utt_pairs = [self.slice_and_pad(utt, self.max_utt_size, self.pad_token_idx)
                                     for utt, floor, feat in in_row]
 
                 padded_utts = [utt_pair[0] for utt_pair in padded_utt_pairs]

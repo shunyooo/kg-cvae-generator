@@ -33,6 +33,7 @@ class SWDADialogCorpus(CVAECorpus):
         new_dialog = []
         new_meta = []
         new_utts = []
+        # 最初の会話を表す
         bod_utt = ["<s>", "<d>", "</s>"]
         all_lenes = []
 
